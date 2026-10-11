@@ -103,7 +103,7 @@ class MainActivity:ComponentActivity() {
     var recommendationHasSearched by remember { mutableStateOf(false) }
     var recommendationSeed by remember { mutableStateOf<Entry?>(null) }; var recommendationRadius by remember { mutableIntStateOf(5) }
     var recommendations by remember { mutableStateOf(listOf<Entry>()) }; var recommendationBusy by remember { mutableStateOf(false) }
-    var screen by rememberSaveable { mutableStateOf("timeline") }; var graphFullscreen by rememberSaveable { mutableStateOf(false) }; var graphOrientation by rememberSaveable { mutableStateOf("vertical") }; var showPreview by remember { mutableStateOf(false) }
+    var screen by rememberSaveable { mutableStateOf("timeline") }; var graphFullscreen by rememberSaveable { mutableStateOf(false) }; var graphOrientation by rememberSaveable { mutableStateOf("vertical") }; var graphCompact by rememberSaveable { mutableStateOf(false) }; var showPreview by remember { mutableStateOf(false) }
     var filter by remember { mutableStateOf("Все") }; var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }; var detail by remember { mutableStateOf<Entry?>(null) }
     var showScales by remember { mutableStateOf(false) }; var scaleName by remember { mutableStateOf("") }
@@ -409,19 +409,22 @@ class MainActivity:ComponentActivity() {
                 Column(Modifier.fillMaxSize()) {
                     Row(Modifier.fillMaxWidth().padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically) {
                         Text("${visible.size} сущностей",Modifier.weight(1f),fontWeight=FontWeight.Bold,color=Ink)
+                        TextButton(onClick={graphCompact=!graphCompact}) { Text(if(graphCompact) "Обычный вид" else "Компактно") }
                         TextButton(onClick={graphOrientation=if(graphOrientation=="vertical") "horizontal" else "vertical"; (context as? ComponentActivity)?.requestedOrientation=if(graphOrientation=="horizontal") ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT}) { Text(if(graphOrientation=="vertical") "Альбомная" else "Книжная") }
                         TextButton(onClick={graphFullscreen=false;(context as? ComponentActivity)?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED}) { Text("Закрыть") }
                     }
                     if(visible.isEmpty()) Text("Добавьте статьи через поиск",Modifier.padding(20.dp),color=Muted)
-                    else HistoricalGraph(visible,Modifier.fillMaxWidth().weight(1f),onSelect={detail=it},fullScreen=true)
+                    else Box(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
+                        HistoricalGraph(visible,Modifier.fillMaxWidth(),onSelect={detail=it},fullScreen=true,compact=graphCompact)
+                    }
                 }
             } else LazyColumn(Modifier.fillMaxSize().padding(pad),contentPadding=PaddingValues(16.dp,8.dp,16.dp,24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                item { Row(verticalAlignment=Alignment.CenterVertically) { Text(chosen.size.toString()+" сущностей",Modifier.weight(1f),fontSize=13.sp,color=Muted); TextButton(onClick={showScales=true}){Text("Шкалы")}; TextButton(onClick={graphFullscreen=true}){Text("Развернуть")} } }
+                item { Row(verticalAlignment=Alignment.CenterVertically) { Text(chosen.size.toString()+" сущностей",Modifier.weight(1f),fontSize=13.sp,color=Muted); TextButton(onClick={showScales=true}){Text("Шкалы")}; TextButton(onClick={graphCompact=!graphCompact}){Text(if(graphCompact) "Обычный вид" else "Компактно")}; TextButton(onClick={graphFullscreen=true}){Text("Развернуть")} } }
                 item { Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp)) { listOf("Все","Человек","Событие","Эпоха","Сущность").forEach { f -> FilterChip(selected=filter==f,onClick={filter=f},label={Text(f)}) } } }
                 val visible=chosen.filter{filter=="Все"||it.kind==filter}.sortedBy{it.start?:Int.MAX_VALUE}
                 if(visible.isEmpty()) item { Column(Modifier.fillMaxWidth().padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally) { Icon(Icons.Default.Timeline,null,tint=Muted,modifier=Modifier.size(38.dp)); Text("Временная шкала пока пуста",color=Muted); Text("Откройте «Поиск статей» и добавьте нужные статьи",fontSize=12.sp,color=Muted) } }
                 else {
-                    item { HistoricalGraph(visible,Modifier.fillMaxWidth(),onSelect={detail=it},fullScreen=graphFullscreen) }
+                    item { HistoricalGraph(visible,Modifier.fillMaxWidth(),onSelect={detail=it},fullScreen=false,compact=graphCompact) }
                     if(graphFullscreen) item { Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End) {
                         TextButton(onClick={graphOrientation=if(graphOrientation=="vertical") "horizontal" else "vertical"; (context as? ComponentActivity)?.requestedOrientation=if(graphOrientation=="horizontal") ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT}) { Text(if(graphOrientation=="vertical") "Альбомная ориентация" else "Книжная ориентация") }
                         TextButton(onClick={graphFullscreen=false;(context as? ComponentActivity)?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED}) { Text("Готово") }
@@ -440,14 +443,16 @@ class MainActivity:ComponentActivity() {
         }
     }
 }
-@Composable private fun HistoricalGraph(entries:List<Entry>,modifier:Modifier=Modifier,onSelect:(Entry)->Unit,fullScreen:Boolean) {
+@Composable private fun HistoricalGraph(entries:List<Entry>,modifier:Modifier=Modifier,onSelect:(Entry)->Unit,fullScreen:Boolean,compact:Boolean=false) {
     val dates=entries.flatMap { listOfNotNull(it.start,it.end) }
     val low=(dates.minOrNull()?:0).toFloat()
     val high=(dates.maxOrNull()?:100).toFloat()
     val span=(high-low).coerceAtLeast(1f)
-    val laneHeight=if(fullScreen) 76.dp else 52.dp
-    val totalHeight=(entries.size*laneHeight.value+44).dp
+    val baseLaneHeight=when { compact && fullScreen -> 42.dp; compact -> 30.dp; fullScreen -> 66.dp; else -> 52.dp }
     var zoom by remember(entries) { mutableStateOf(1f) }
+    var zoomY by remember(entries) { mutableStateOf(1f) }
+    val laneHeight=baseLaneHeight*zoomY
+    val totalHeight=(entries.size*laneHeight.value+(if(compact) 30 else 44)).dp
     var panFraction by remember(entries) { mutableStateOf(0f) }
     var selectedYear by remember(entries) { mutableStateOf<Int?>(null) }
     Column(modifier) {
@@ -464,17 +469,22 @@ class MainActivity:ComponentActivity() {
                 color=Ink,
                 maxLines=1
             )
+            Text("Г",fontSize=11.sp,color=Muted)
             TextButton(onClick={ zoom=(zoom/1.5f).coerceAtLeast(1f); if(zoom<=1f) panFraction=0f }) { Text("−") }
-            Text("${String.format(Locale.getDefault(),"%.1f",zoom)}×",fontSize=12.sp,color=Muted)
+            Text("${String.format(Locale.getDefault(),"%.1f",zoom)}×",fontSize=11.sp,color=Muted)
             TextButton(onClick={ zoom=(zoom*1.5f).coerceAtMost(32f) }) { Text("+") }
-            TextButton(onClick={ zoom=1f; panFraction=0f; selectedYear=null }) { Text("↺") }
+            Text("В",fontSize=11.sp,color=Muted)
+            TextButton(onClick={ zoomY=(zoomY/1.25f).coerceAtLeast(0.65f) }) { Text("−") }
+            Text("${String.format(Locale.getDefault(),"%.1f",zoomY)}×",fontSize=11.sp,color=Muted)
+            TextButton(onClick={ zoomY=(zoomY*1.25f).coerceAtMost(4f) }) { Text("+") }
+            TextButton(onClick={ zoom=1f; zoomY=1f; panFraction=0f; selectedYear=null }) { Text("↺") }
         }
         Canvas(
             Modifier.fillMaxWidth().height(totalHeight).clip(RoundedCornerShape(14.dp))
                 .background(Color.White)
                 .pointerInput(entries) {
                     awaitEachGesture {
-                        awaitFirstDown(requireUnconsumed=false)
+                        val down=awaitFirstDown(requireUnconsumed=false)
                         var previousCentroidX:Float? = null
                         var previousSpan:Float? = null
                         do {
@@ -498,6 +508,7 @@ class MainActivity:ComponentActivity() {
                                     val anchor=((previousCentroidX!!-left+oldPan)/oldZoom).coerceIn(0f,plot)
                                     val newPan=(anchor*newZoom-(cx-left)).coerceIn(0f,plot*(newZoom-1f))
                                     zoom=newZoom
+                                    zoomY=(zoomY*(spanNow/oldSpan)).coerceIn(0.65f,4f)
                                     panFraction=if(newZoom<=1f) 0f else (newPan/(plot*(newZoom-1f))).coerceIn(0f,1f)
                                 }
                                 previousSpan=spanNow
@@ -506,13 +517,17 @@ class MainActivity:ComponentActivity() {
                             } else if(pressed.size==1) {
                                 previousSpan=null
                                 previousCentroidX=null
-                                val left=88.dp.toPx()
-                                val plot=(size.width-left-12.dp.toPx()).coerceAtLeast(1f)
-                                val maxPan=plot*(zoom-1f)
-                                val pan=maxPan*panFraction
-                                val ratio=((pressed[0].position.x-left+pan)/(plot*zoom)).coerceIn(0f,1f)
-                                selectedYear=(low+span*ratio).toInt()
-                                pressed[0].consume()
+                                val dx=pressed[0].position.x-down.position.x
+                                val dy=pressed[0].position.y-down.position.y
+                                if(kotlin.math.abs(dx)>=kotlin.math.abs(dy) || kotlin.math.abs(dy)<viewConfiguration.touchSlop) {
+                                    val left=88.dp.toPx()
+                                    val plot=(size.width-left-12.dp.toPx()).coerceAtLeast(1f)
+                                    val maxPan=plot*(zoom-1f)
+                                    val pan=maxPan*panFraction
+                                    val ratio=((pressed[0].position.x-left+pan)/(plot*zoom)).coerceIn(0f,1f)
+                                    selectedYear=(low+span*ratio).toInt()
+                                    pressed[0].consume()
+                                }
                             } else {
                                 previousSpan=null
                                 previousCentroidX=null
@@ -570,15 +585,13 @@ class MainActivity:ComponentActivity() {
             }
         }
         if(zoom>1f) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=2.dp),
-                verticalAlignment=Alignment.CenterVertically
-            ) {
+            Row(Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=2.dp),verticalAlignment=Alignment.CenterVertically) {
                 Text("←",fontSize=14.sp,color=Muted)
                 Slider(value=panFraction,onValueChange={panFraction=it},modifier=Modifier.weight(1f),valueRange=0f..1f)
                 Text("→",fontSize=14.sp,color=Muted)
             }
         }
+        if(compact) Text("Компактный график · уменьшенные интервалы между сущностями",Modifier.padding(start=10.dp,bottom=3.dp),fontSize=10.sp,color=Muted)
     }
 }
 @Composable private fun Label(title:String,count:String){Row(verticalAlignment=Alignment.CenterVertically){Text(title,color=Muted,fontSize=11.sp,fontWeight=FontWeight.Bold,letterSpacing=1.sp);Spacer(Modifier.width(8.dp));Text(count,color=Muted,fontSize=11.sp)}}
