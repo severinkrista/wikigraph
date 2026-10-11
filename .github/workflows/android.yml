@@ -36,8 +36,16 @@ jobs:
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)"
           EXPECTED="$(keytool -list -v -keystore "$KEYSTORE" -storetype PKCS12 -storepass android -alias androiddebugkey | awk -F': ' '/SHA256:/{print $2}' | tr -d ':')"
           ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2}' | tr -d ':')"
-          test -n "$EXPECTED"
-          test "$EXPECTED" = "$ACTUAL"
+          echo "Expected signing certificate SHA-256: ${EXPECTED:-<not found>}"
+          echo "APK signing certificate SHA-256:      ${ACTUAL:-<not found>}"
+          if [ -z "$EXPECTED" ] || [ -z "$ACTUAL" ]; then
+            echo "::error::Could not read signing certificate fingerprints."
+            exit 1
+          fi
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "::error::APK was signed with a different certificate than the repository's fixed signing key."
+            exit 1
+          fi
           echo "APK signature verified against the repository's fixed signing key."
       - name: Name APK with app version
         id: apk
