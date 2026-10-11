@@ -85,23 +85,46 @@ class MainActivity:ComponentActivity() {
                     Button(onClick={runCatching { context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(detail!!.url))) }},modifier=Modifier.fillMaxWidth()){Text("Открыть статью в Википедии")}
                     OutlinedButton(onClick={chosen.removeAll{it.pageId==detail!!.pageId};save();detail=null},modifier=Modifier.fillMaxWidth()){Text("Убрать со шкалы")}
                 }
-            } else if(screen=="search") LazyColumn(Modifier.fillMaxSize().padding(pad),contentPadding=PaddingValues(16.dp,8.dp,16.dp,24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                item {
-                    OutlinedTextField(value=query,onValueChange={query=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("Найти в Википедии…")},leadingIcon={Icon(Icons.Default.Search,null)},trailingIcon={if(busy) CircularProgressIndicator(Modifier.size(22.dp),strokeWidth=2.dp) else IconButton(onClick={search()}){Icon(Icons.Default.Search,"Искать")}},singleLine=true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={search()}),shape=RoundedCornerShape(16.dp))
-                    if(message.isNotBlank()) Text(message,color=Muted,fontSize=12.sp,modifier=Modifier.padding(top=6.dp))
-                }
-                if(results.isNotEmpty()) { item { Label("РЕЗУЛЬТАТЫ ПОИСКА",results.size.toString()) }; items(results,key={"r"+it.pageId}) { e ->
-                    Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(14.dp)) {
-                        Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
-                            Box(Modifier.size(10.dp).clip(CircleShape).background(e.color))
-                            Column(Modifier.weight(1f).padding(horizontal=12.dp)) { Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink); if(e.description.isNotBlank()) Text(e.description,color=Muted,fontSize=12.sp,maxLines=2) }
-                            IconButton(onClick={if(chosen.any{it.pageId==e.pageId}) message="Уже добавлено" else scope.launch { busy=true; message="Загружаем даты из Викиданных…"; try { val full=withContext(Dispatchers.IO){Wiki.enrich(e)}; chosen.add(full); save(); message="Добавлено на шкалу" } catch(ex:Exception) { chosen.add(e); save(); message="Статья добавлена, но даты загрузить не удалось" } finally { busy=false } }}) { Icon(Icons.Default.Add,"Добавить",tint=Blue) }
+            } else if(screen=="search") {
+                LazyColumn(Modifier.fillMaxSize().padding(pad),contentPadding=PaddingValues(16.dp,8.dp,16.dp,24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                    item {
+                        OutlinedTextField(value=query,onValueChange={query=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("Найти в Википедии…")},leadingIcon={Icon(Icons.Default.Search,null)},trailingIcon={if(busy) CircularProgressIndicator(Modifier.size(22.dp),strokeWidth=2.dp) else IconButton(onClick={search()}){Icon(Icons.Default.Search,"Искать")}},singleLine=true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={search()}),shape=RoundedCornerShape(16.dp))
+                        if(message.isNotBlank()) Text(message,color=Muted,fontSize=12.sp,modifier=Modifier.padding(top=6.dp))
+                    }
+                    if(results.isNotEmpty()) {
+                        item { Label("РЕЗУЛЬТАТЫ ПОИСКА",results.size.toString()) }
+                        items(results,key={ "r"+it.pageId }) { e ->
+                            Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(14.dp)) {
+                                Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
+                                    Box(Modifier.size(10.dp).clip(CircleShape).background(e.color))
+                                    Column(Modifier.weight(1f).padding(horizontal=12.dp)) {
+                                        Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink)
+                                        if(e.description.isNotBlank()) Text(e.description,color=Muted,fontSize=12.sp,maxLines=2)
+                                    }
+                                    IconButton(onClick={
+                                        if(chosen.any{it.pageId==e.pageId}) message="Уже добавлено"
+                                        else scope.launch {
+                                            busy=true; message="Загружаем даты из Викиданных…"
+                                            try { val full=withContext(Dispatchers.IO){Wiki.enrich(e)}; chosen.add(full); save(); message="Добавлено на шкалу" }
+                                            catch(ex:Exception) { chosen.add(e); save(); message="Статья добавлена, но даты загрузить не удалось" }
+                                            finally { busy=false }
+                                        }
+                                    }) { Icon(Icons.Default.Add,"Добавить",tint=Blue) }
+                                }
+                            }
                         }
                     }
-                } } }
-                item { Text("Выбранные статьи · ${chosen.size}",fontSize=18.sp,fontWeight=FontWeight.Bold,color=Ink) }
-                if(chosen.isEmpty()) item { Text("Добавляй статьи через поиск — даты появятся на общей шкале.",color=Muted,fontSize=13.sp) }
-                items(chosen.toList(),key={"selected-"+it.pageId}) { e -> Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(12.dp)) { Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink); Text(e.dates,fontSize=12.sp,color=Muted) }; IconButton(onClick={chosen.remove(e);save()}) { Icon(Icons.Default.DeleteOutline,"Удалить из набора",tint=Muted) } } } }
+                    item { Text("Выбранные статьи · ${chosen.size}",fontSize=18.sp,fontWeight=FontWeight.Bold,color=Ink) }
+                    if(chosen.isEmpty()) item { Text("Добавляй статьи через поиск — даты появятся на общей шкале.",color=Muted,fontSize=13.sp) }
+                    items(chosen.toList(),key={ "selected-"+it.pageId }) { e ->
+                        Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(12.dp)) {
+                            Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) { Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink); Text(e.dates,fontSize=12.sp,color=Muted) }
+                                IconButton(onClick={chosen.remove(e);save()}) { Icon(Icons.Default.DeleteOutline,"Удалить из набора",tint=Muted) }
+                            }
+                        }
+                    }
+                }
             } else LazyColumn(Modifier.fillMaxSize().padding(pad),contentPadding=PaddingValues(16.dp,8.dp,16.dp,24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                 item { Row(verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Моя шкала",fontSize=22.sp,fontWeight=FontWeight.Bold,color=Ink); Text(chosen.size.toString()+" сущностей",fontSize=12.sp,color=Muted) }; Icon(Icons.Default.Timeline,null,tint=Blue) } }
                 item { Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp)) { listOf("Все","Человек","Событие","Эпоха","Сущность").forEach { f -> FilterChip(selected=filter==f,onClick={filter=f},label={Text(f)}) } } }
