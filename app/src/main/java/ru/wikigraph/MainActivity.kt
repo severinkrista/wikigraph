@@ -98,6 +98,7 @@ private fun normalizeWikidataTime(value:String?):Pair<String,String>? {
     return when { mo==0 -> y.toString().padStart(4,'0') to "year"; d==0 -> "%04d-%02d".format(Locale.ROOT,y,mo) to "month"; else -> runCatching { LocalDate.of(y,mo,d).toString() to "day" }.getOrNull() }
 }
 private fun timelineValue(e:Entry,isEnd:Boolean):Double {
+    if(isEnd && e.end==null && e.endDate==null) return timelineValue(e,false)
     val value=if(isEnd) e.endDate else e.startDate
     if(value!=null) {
         val date=runCatching { when(value.length) {
@@ -275,7 +276,7 @@ class MainActivity:ComponentActivity() {
                             val endOk=draftEndDate.isBlank() || endText!=null
                             if(!startOk || !endOk) message="Проверьте формат дат"
                             else {
-                                val precision=listOfNotNull(if(startText!=null) parseDateInput(startText)?.second else null,if(endText!=null) parseDateInput(endText)?.second else null).minByOrNull { listOf("year","month","day").indexOf(it) } ?: "year"
+                                val precision=listOfNotNull(if(startText!=null) parseDateInput(startText)?.second else null,if(endText!=null) parseDateInput(endText)?.second else null).maxByOrNull { listOf("year","month","day").indexOf(it) } ?: "year"
                                 val updated=owner.copy(start=startText?.let { yearFromDate(it) },end=endText?.let { yearFromDate(it) },startDate=startText,endDate=endText,datePrecision=precision)
                                 val at=chosen.indexOfFirst { it.pageId==owner.pageId }; if(at>=0) chosen[at]=updated
                                 detail=updated; save(); showDateEditor=false; message="Даты сохранены"
@@ -1016,6 +1017,30 @@ private object Wiki {
     private fun articleDateOptions(text:String):List<DateOption> {
         val result=mutableListOf<DateOption>()
         val normalized=text.replace('\u00a0',' ').replace('\u2212','-')
+        val months=mapOf("января" to 1,"февраля" to 2,"марта" to 3,"апреля" to 4,"мая" to 5,"июня" to 6,"июля" to 7,"августа" to 8,"сентября" to 9,"октября" to 10,"ноября" to 11,"декабря" to 12)
+        fun exactDate(dayText:String,monthText:String,yearText:String):String? {
+            val day=dayText.toIntOrNull() ?: return null
+            val month=months[monthText.lowercase(Locale.ROOT)] ?: return null
+            val year=yearText.toIntOrNull() ?: return null
+            return runCatching { LocalDate.of(year,month,day).toString() }.getOrNull()
+        }
+        val exactRange=Regex("(?<!\\d)(\\d{1,2})\\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\\s+(\\d{4})(?:\\s*года?)?\\s*(?:—|–|-)\\s*(\\d{1,2})\\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\\s+(\\d{4})",RegexOption.IGNORE_CASE)
+        exactRange.findAll(normalized).forEach { m ->
+            val start=exactDate(m.groupValues[1],m.groupValues[2],m.groupValues[3])
+            val end=exactDate(m.groupValues[4],m.groupValues[5],m.groupValues[6])
+            if(start!=null && end!=null) result.add(DateOption("Точный период из статьи: "+m.value,yearFromDate(start),yearFromDate(end),start,end,"day"))
+        }
+        val sharedYearRange=Regex("(?<!\\d)(\\d{1,2})\\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\\s*(?:—|–|-)\\s*(\\d{1,2})\\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\\s+(\\d{4})",RegexOption.IGNORE_CASE)
+        sharedYearRange.findAll(normalized).forEach { m ->
+            val start=exactDate(m.groupValues[1],m.groupValues[2],m.groupValues[5])
+            val end=exactDate(m.groupValues[3],m.groupValues[4],m.groupValues[5])
+            if(start!=null && end!=null) result.add(DateOption("Точный период из статьи: "+m.value,yearFromDate(start),yearFromDate(end),start,end,"day"))
+        }
+        val exactSingle=Regex("(?<!\\d)(\\d{1,2})\\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\\s+(\\d{4})(?:\\s*года?)?",RegexOption.IGNORE_CASE)
+        exactSingle.findAll(normalized).forEach { m ->
+            val date=exactDate(m.groupValues[1],m.groupValues[2],m.groupValues[3])
+            if(date!=null) result.add(DateOption("Точная дата из статьи: "+m.value,yearFromDate(date),null,date,null,"day"))
+        }
         val bc="(?:до\\s*н\\.?\\s*э\\.?|до\\s+нашей\\s+эры)"
         val rangeRegex=Regex("(?<!\\d)(\\d{1,4})\\s*(?:гг?\\.?|года|год|—|–|-)\\s*(\\d{1,4})(\\s*$bc)?",RegexOption.IGNORE_CASE)
         val covered=mutableSetOf<IntRange>()
