@@ -304,23 +304,23 @@ class MainActivity:ComponentActivity() {
                             }
                         }
                     }
-                    if(recommendationSeed!=null) {
+                    if(searchMode=="recommendations") {
                         item {
                             Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(14.dp)) {
                                 Column(Modifier.fillMaxWidth().padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                                     Text("События рядом с исходной статьёй",fontWeight=FontWeight.Bold,color=Ink)
-                                    Text(recommendationSeed!!.title+" · "+(recommendationSeed!!.start?.let{year(it)} ?: "год не определён"),fontSize=12.sp,color=Muted)
+                                    Text(if(recommendationSeed==null) "Сначала найдите и добавьте стартовую статью в режиме «Поиск статей»." else recommendationSeed!!.title+" · "+(recommendationSeed!!.start?.let{year(it)} ?: "год не определён"),fontSize=12.sp,color=Muted)
                                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                                         listOf(1,5,10).forEach { radius -> FilterChip(selected=recommendationRadius==radius,onClick={recommendationRadius=radius},label={Text("±$radius лет")}) }
                                     }
-                                    Button(onClick={loadRecommendations()},modifier=Modifier.fillMaxWidth(),enabled=!recommendationBusy) {
+                                    Button(onClick={loadRecommendations()},modifier=Modifier.fillMaxWidth(),enabled=!recommendationBusy&&recommendationSeed!=null) {
                                         if(recommendationBusy) CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp) else Text("Найти рекомендации")
                                     }
                                 }
                             }
                         }
                     }
-                    if(recommendations.isNotEmpty()) {
+                    if(searchMode=="recommendations" && recommendationHasSearched && recommendations.isNotEmpty()) {
                         item { Label("СТАТЬИ РЯДОМ ПО ВРЕМЕНИ",recommendations.size.toString()) }
                         items(recommendations,key={ "rec-"+it.pageId }) { e ->
                             Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(12.dp)) {
