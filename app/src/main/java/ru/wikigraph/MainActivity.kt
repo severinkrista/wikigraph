@@ -282,26 +282,112 @@ class MainActivity:ComponentActivity() {
     val high=(dates.maxOrNull()?:100).toFloat()
     val span=(high-low).coerceAtLeast(1f)
     val laneHeight=if(fullScreen) 76.dp else 52.dp
-    val totalHeight=(entries.size*laneHeight.value+40).dp
-    Canvas(modifier.height(totalHeight)) {
-        val left=88.dp.toPx(); val right=12.dp.toPx(); val axisY=18.dp.toPx()
-        val plotWidth=(size.width-left-right).coerceAtLeast(1f)
-        val paint=android.graphics.Paint().apply { color=android.graphics.Color.DKGRAY; textSize=10.sp.toPx(); textAlign=android.graphics.Paint.Align.CENTER }
-        for(i in 0..4) {
-            val x=left+plotWidth*i/4
-            drawLine(Muted.copy(alpha=.5f),androidx.compose.ui.geometry.Offset(x,axisY),androidx.compose.ui.geometry.Offset(x,size.height),strokeWidth=1.dp.toPx())
-            val y=(low+span*i/4).toInt()
-            drawContext.canvas.nativeCanvas.drawText(if(y<0) "${-y} до н.э." else y.toString(),x,11.dp.toPx(),paint)
+    val totalHeight=(entries.size*laneHeight.value+44).dp
+    var zoom by remember(entries) { mutableStateOf(1f) }
+    var panFraction by remember(entries) { mutableStateOf(0f) }
+    var selectedYear by remember(entries) { mutableStateOf<Int?>(null) }
+    Column(modifier) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal=8.dp, vertical=4.dp),
+            verticalAlignment=Alignment.CenterVertically,
+            horizontalArrangement=Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                selectedYear?.let { "Выбранный момент · ${year(it)}" } ?: "Проведите пальцем по графику",
+                Modifier.weight(1f),
+                fontSize=12.sp,
+                fontWeight=FontWeight.SemiBold,
+                color=Ink,
+                maxLines=1
+            )
+            TextButton(onClick={ zoom=(zoom/1.5f).coerceAtLeast(1f); if(zoom<=1f) panFraction=0f }) { Text("−") }
+            Text("${String.format(Locale.getDefault(),"%.1f",zoom)}×",fontSize=12.sp,color=Muted)
+            TextButton(onClick={ zoom=(zoom*1.5f).coerceAtMost(32f) }) { Text("+") }
+            TextButton(onClick={ zoom=1f; panFraction=0f; selectedYear=null }) { Text("Сброс") }
         }
-        entries.forEachIndexed { i,e ->
-            val cy=axisY+12.dp.toPx()+laneHeight.toPx()*i+laneHeight.toPx()*.5f
-            drawLine(Muted.copy(alpha=.2f),androidx.compose.ui.geometry.Offset(left,cy),androidx.compose.ui.geometry.Offset(size.width-right,cy),strokeWidth=1.dp.toPx())
-            val x1=left+(((e.start?:low.toInt()).toFloat()-low)/span).coerceIn(0f,1f)*plotWidth
-            val x2=left+(((e.end?:e.start?:low.toInt()).toFloat()-low)/span).coerceIn(0f,1f)*plotWidth
-            if(e.start!=null && e.end!=null && e.end!=e.start) drawLine(e.color,androidx.compose.ui.geometry.Offset(minOf(x1,x2),cy),androidx.compose.ui.geometry.Offset(maxOf(x1,x2),cy),strokeWidth=8.dp.toPx())
-            drawCircle(e.color,6.dp.toPx(),androidx.compose.ui.geometry.Offset(x1,cy))
-            val labelPaint=android.graphics.Paint().apply { color=android.graphics.Color.DKGRAY; textSize=10.sp.toPx() }
-            drawContext.canvas.nativeCanvas.drawText(e.title.take(13),4.dp.toPx(),cy+4.dp.toPx(),labelPaint)
+        Canvas(
+            Modifier.fillMaxWidth().height(totalHeight).clip(RoundedCornerShape(14.dp))
+                .background(Color.White)
+                .pointerInput(entries,zoom,panFraction) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed=false)
+                        var pressed=true
+                        while(pressed) {
+                            val event=awaitPointerEvent()
+                            val change=event.changes.firstOrNull() ?: break
+                            val left=88.dp.toPx()
+                            val right=12.dp.toPx()
+                            val plot=(size.width-left-right).coerceAtLeast(1f)
+                            val maxPan=plot*(zoom-1f)
+                            val pan=maxPan*panFraction
+                            val ratio=((change.position.x-left+pan)/(plot*zoom)).coerceIn(0f,1f)
+                            selectedYear=(low+span*ratio).toInt()
+                            change.consume()
+                            pressed=event.changes.any { it.pressed }
+                        }
+                    }
+                }
+        ) {
+            val left=88.dp.toPx()
+            val right=12.dp.toPx()
+            val axisY=22.dp.toPx()
+            val plotWidth=(size.width-left-right).coerceAtLeast(1f)
+            val contentWidth=plotWidth*zoom
+            val maxPan=(contentWidth-plotWidth).coerceAtLeast(0f)
+            val pan=maxPan*panFraction
+            val visibleStart=low+span*(pan/contentWidth.coerceAtLeast(1f))
+            val visibleSpan=span/zoom
+            val labelPaint=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                color=android.graphics.Color.rgb(35,54,77); textSize=10.sp.toPx()
+            }
+            val tickPaint=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                color=android.graphics.Color.rgb(117,130,148); textSize=10.sp.toPx(); textAlign=android.graphics.Paint.Align.CENTER
+            }
+            for(i in 0..4) {
+                val x=left+plotWidth*i/4
+                drawLine(Color(0xFFE8ECF1),androidx.compose.ui.geometry.Offset(x,axisY),androidx.compose.ui.geometry.Offset(x,size.height),strokeWidth=1.dp.toPx())
+                val tick=(visibleStart+visibleSpan*i/4).toInt()
+                drawContext.canvas.nativeCanvas.drawText(year(tick),x,14.dp.toPx(),tickPaint)
+            }
+            entries.forEachIndexed { i,e ->
+                val cy=axisY+12.dp.toPx()+laneHeight.toPx()*i+laneHeight.toPx()*.5f
+                drawLine(Color(0xFFF0F2F5),androidx.compose.ui.geometry.Offset(left,cy),androidx.compose.ui.geometry.Offset(size.width-right,cy),strokeWidth=1.dp.toPx())
+                val startYear=(e.start?:low.toInt()).toFloat()
+                val endYear=(e.end?:e.start?:low.toInt()).toFloat()
+                val x1=left+((startYear-low)/span)*contentWidth-pan
+                val x2=left+((endYear-low)/span)*contentWidth-pan
+                if(e.start!=null && e.end!=null && e.end!=e.start) {
+                    drawLine(e.color,androidx.compose.ui.geometry.Offset(minOf(x1,x2),cy),androidx.compose.ui.geometry.Offset(maxOf(x1,x2),cy),strokeWidth=8.dp.toPx())
+                    drawCircle(e.color,4.dp.toPx(),androidx.compose.ui.geometry.Offset((x1+x2)/2,cy))
+                }
+                drawCircle(e.color,6.dp.toPx(),androidx.compose.ui.geometry.Offset(x1,cy))
+                drawContext.canvas.nativeCanvas.drawText(e.title.take(13),4.dp.toPx(),cy+4.dp.toPx(),labelPaint)
+            }
+            selectedYear?.let { selected ->
+                val x=left+((selected-low)/span)*contentWidth-pan
+                if(x>=left && x<=size.width-right) {
+                    drawLine(Color(0xFF23364D).copy(alpha=.85f),androidx.compose.ui.geometry.Offset(x,axisY),androidx.compose.ui.geometry.Offset(x,size.height),strokeWidth=1.5.dp.toPx())
+                    drawCircle(Color.White,5.dp.toPx(),androidx.compose.ui.geometry.Offset(x,axisY+2.dp.toPx()))
+                    val text=year(selected)
+                    val p=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color=android.graphics.Color.WHITE; textSize=11.sp.toPx(); textAlign=android.graphics.Paint.Align.CENTER; typeface=android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL) }
+                    val cx=x.coerceIn(34.dp.toPx(),size.width-34.dp.toPx())
+                    drawContext.canvas.nativeCanvas.drawRoundRect(cx-32.dp.toPx(),2.dp.toPx(),cx+32.dp.toPx(),20.dp.toPx(),8.dp.toPx(),8.dp.toPx(),android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color=android.graphics.Color.rgb(35,54,77) })
+                    drawContext.canvas.nativeCanvas.drawText(text,cx,14.dp.toPx(),p)
+                }
+            }
+        }
+        if(zoom>1f) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=2.dp),
+                verticalAlignment=Alignment.CenterVertically
+            ) {
+                Text("←",fontSize=14.sp,color=Muted)
+                Slider(value=panFraction,onValueChange={panFraction=it},modifier=Modifier.weight(1f),valueRange=0f..1f)
+                Text("→",fontSize=14.sp,color=Muted)
+            }
+        }
+        if(fullScreen && entries.isNotEmpty()) {
+            Text("Нажмите на сущность, чтобы открыть подробности",Modifier.padding(horizontal=10.dp, vertical=2.dp),fontSize=11.sp,color=Muted)
         }
     }
 }
