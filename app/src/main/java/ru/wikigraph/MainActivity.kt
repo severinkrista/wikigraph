@@ -246,7 +246,7 @@ class MainActivity:ComponentActivity() {
                                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                                         listOf(1,5,10).forEach { radius -> FilterChip(selected=recommendationRadius==radius,onClick={recommendationRadius=radius},label={Text("±$radius лет")}) }
                                     }
-                                    Button(onClick={loadRecommendations},modifier=Modifier.fillMaxWidth(),enabled=!recommendationBusy) {
+                                    Button(onClick={loadRecommendations()},modifier=Modifier.fillMaxWidth(),enabled=!recommendationBusy) {
                                         if(recommendationBusy) CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp) else Text("Найти рекомендации")
                                     }
                                 }
