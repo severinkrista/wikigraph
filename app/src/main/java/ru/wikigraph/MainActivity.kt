@@ -648,31 +648,18 @@ class MainActivity:ComponentActivity() {
     var panFraction by remember(entries) { mutableStateOf(0f) }
     var selectedYear by remember(entries) { mutableStateOf<Int?>(null) }
     Column(modifier) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal=8.dp, vertical=4.dp),
-            verticalAlignment=Alignment.CenterVertically,
-            horizontalArrangement=Arrangement.spacedBy(6.dp)
-        ) {
-            Text(
-                selectedYear?.let { "Выбранный момент · ${year(it)}" } ?: "Проведите пальцем по графику",
-                Modifier.weight(1f),
-                fontSize=12.sp,
-                fontWeight=FontWeight.SemiBold,
-                color=Ink,
-                maxLines=1
-            )
-            Text("Г",fontSize=11.sp,color=Muted)
-            TextButton(onClick={ zoom=(zoom/1.5f).coerceAtLeast(1f); if(zoom<=1f) panFraction=0f }) { Text("−") }
-            Text("${String.format(Locale.getDefault(),"%.1f",zoom)}×",fontSize=11.sp,color=Muted)
-            TextButton(onClick={ zoom=(zoom*1.5f).coerceAtMost(32f) }) { Text("+") }
-            TextButton(onClick={ zoom=1f; zoomY=1f; panFraction=0f; selectedYear=null }) { Text("Сброс") }
-        }
-        Row(Modifier.fillMaxWidth().padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
-            Text("В",fontSize=11.sp,color=Muted)
-            TextButton(onClick={ zoomY=(zoomY/1.25f).coerceAtLeast(0.65f) }) { Text("−") }
-            Text("${String.format(Locale.getDefault(),"%.1f",zoomY)}×",fontSize=11.sp,color=Muted)
-            TextButton(onClick={ zoomY=(zoomY*1.25f).coerceAtMost(4f) }) { Text("+") }
-            Text("Масштаб по вертикали",fontSize=11.sp,color=Muted)
+        Row(Modifier.fillMaxWidth().padding(horizontal=6.dp, vertical=2.dp), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.spacedBy(2.dp)) {
+            Text("Г",fontSize=11.sp,color=Muted,fontWeight=FontWeight.SemiBold)
+            TextButton(onClick={ zoom=(zoom/1.5f).coerceAtLeast(1f); if(zoom<=1f) panFraction=0f }, contentPadding=PaddingValues(horizontal=6.dp, vertical=0.dp), modifier=Modifier.height(30.dp)) { Text("−") }
+            Text("${String.format(Locale.getDefault(),"%.1f",zoom)}×",fontSize=11.sp,color=Ink,maxLines=1)
+            TextButton(onClick={ zoom=(zoom*1.5f).coerceAtMost(32f) }, contentPadding=PaddingValues(horizontal=6.dp, vertical=0.dp), modifier=Modifier.height(30.dp)) { Text("+") }
+            Spacer(Modifier.width(4.dp))
+            Text("В",fontSize=11.sp,color=Muted,fontWeight=FontWeight.SemiBold)
+            TextButton(onClick={ zoomY=(zoomY/1.25f).coerceAtLeast(0.65f) }, contentPadding=PaddingValues(horizontal=6.dp, vertical=0.dp), modifier=Modifier.height(30.dp)) { Text("−") }
+            Text("${String.format(Locale.getDefault(),"%.1f",zoomY)}×",fontSize=11.sp,color=Ink,maxLines=1)
+            TextButton(onClick={ zoomY=(zoomY*1.25f).coerceAtMost(4f) }, contentPadding=PaddingValues(horizontal=6.dp, vertical=0.dp), modifier=Modifier.height(30.dp)) { Text("+") }
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick={ zoom=1f; zoomY=1f; panFraction=0f; selectedYear=null }, contentPadding=PaddingValues(horizontal=5.dp, vertical=0.dp), modifier=Modifier.height(30.dp)) { Text("↺",fontSize=16.sp) }
         }
         Canvas(
             Modifier.fillMaxWidth().height(totalHeight).clip(RoundedCornerShape(14.dp))
