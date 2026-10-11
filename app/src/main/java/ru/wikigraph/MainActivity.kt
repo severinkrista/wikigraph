@@ -244,7 +244,7 @@ class MainActivity:ComponentActivity() {
                         item {
                             Text("Каталог категорий — как рубрикатор: выберите тему или найдите категорию по названию.",fontSize=12.sp,color=Muted)
                             OutlinedTextField(value=categoryQuery,onValueChange={categoryQuery=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("Название категории")},singleLine=true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={loadCategories()}) )
-                            Button(onClick={loadCategories},modifier=Modifier.fillMaxWidth(),enabled=!categoryBusy) { Text(if(categoryBusy) "Загружаем…" else "Найти категории") }
+                            Button(onClick={loadCategories()},modifier=Modifier.fillMaxWidth(),enabled=!categoryBusy) { Text(if(categoryBusy) "Загружаем…" else "Найти категории") }
                             if(categoryHasSearched) TextButton(onClick={categoryHasSearched=false; browseParent=null; browseCategories=emptyList(); categories=emptyList(); categoryQuery=""; selectedCategory=null; message=""}) { Text("Вернуться ко всем темам") }
                         }
                         if(browseParent==null && !categoryHasSearched) {
