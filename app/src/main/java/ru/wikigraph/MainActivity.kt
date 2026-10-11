@@ -236,6 +236,7 @@ class MainActivity:ComponentActivity() {
                             Text("Каталог категорий — как рубрикатор: выберите тему или найдите категорию по названию.",fontSize=12.sp,color=Muted)
                             OutlinedTextField(value=categoryQuery,onValueChange={categoryQuery=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("Название категории")},singleLine=true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={loadCategories()}) )
                             Button(onClick={loadCategories},modifier=Modifier.fillMaxWidth(),enabled=!categoryBusy) { Text(if(categoryBusy) "Загружаем…" else "Найти категории") }
+                            if(categoryHasSearched) TextButton(onClick={categoryHasSearched=false; browseParent=null; browseCategories=emptyList(); categories=emptyList(); categoryQuery=""; selectedCategory=null; message=""}) { Text("Вернуться ко всем темам") }
                         }
                         if(browseParent==null && !categoryHasSearched) {
                             item {
@@ -261,7 +262,7 @@ class MainActivity:ComponentActivity() {
                                 Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(12.dp)) {
                                     Column(Modifier.fillMaxWidth().padding(10.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                         Text(cat.title,fontWeight=FontWeight.SemiBold,color=Ink)
-                                        Text(cat.size.toString()+" страниц в категории",fontSize=11.sp,color=Muted)
+                                        Text(if(cat.size>0) cat.size.toString()+" страниц в категории" else "Подкатегория",fontSize=11.sp,color=Muted)
                                         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                                             OutlinedButton(onClick={openCategory(cat)},modifier=Modifier.weight(1f)) { Text("Подкатегории") }
                                             Button(onClick={scope.launch { busy=true; results=emptyList(); searchMode="articles"; selectedCategory=null; message="Загружаем статьи категории…"; try { results=withContext(Dispatchers.IO){Wiki.searchInCategory(cat.title)}; message=if(results.isEmpty()) "В категории нет доступных статей" else "Категория: "+cat.title } catch(e:Exception) { message="Не удалось загрузить статьи категории" } finally { busy=false } },modifier=Modifier.weight(1f)) { Text("Статьи") }
