@@ -295,8 +295,8 @@ class MainActivity:ComponentActivity() {
                                         if(chosen.any{it.pageId==e.pageId}) message="Уже добавлено"
                                         else scope.launch {
                                             busy=true; message="Загружаем даты из статьи…"
-                                            try { val full=withContext(Dispatchers.IO){Wiki.enrich(e)}; chosen.add(full); save(); recommendationSeed=full; message="Добавлено на график. Рекомендации доступны в отдельном режиме." }
-                                            catch(ex:Exception) { chosen.add(e); save(); recommendationSeed=e; message="Статья добавлена, но даты загрузить не удалось" }
+                                            try { val full=withContext(Dispatchers.IO){Wiki.enrich(e)}; chosen.add(full); save(); recommendationSeed=full; recommendations=emptyList(); recommendationHasSearched=false; message="Добавлено на график. Рекомендации доступны в отдельном режиме." }
+                                            catch(ex:Exception) { chosen.add(e); save(); recommendationSeed=e; recommendations=emptyList(); recommendationHasSearched=false; message="Статья добавлена, но даты загрузить не удалось" }
                                             finally { busy=false }
                                         }
                                     }) { Icon(Icons.Default.Add,"Добавить",tint=Blue) }
@@ -334,28 +334,8 @@ class MainActivity:ComponentActivity() {
                             }
                         }
                     }
-                    if(results.isNotEmpty()) {
-                        item { Label("РЕЗУЛЬТАТЫ ПОИСКА",results.size.toString()) }
-                        items(results,key={ "r"+it.pageId }) { e ->
-                            Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(14.dp)) {
-                                Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
-                                    Box(Modifier.size(10.dp).clip(CircleShape).background(e.color))
-                                    Column(Modifier.weight(1f).padding(horizontal=12.dp)) {
-                                        Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink)
-                                        if(e.description.isNotBlank()) Text(e.description,color=Muted,fontSize=12.sp,maxLines=2)
-                                    }
-                                    IconButton(onClick={
-                                        if(chosen.any{it.pageId==e.pageId}) message="Уже добавлено"
-                                        else scope.launch {
-                                            busy=true; message="Загружаем даты из Викиданных…"
-                                            try { val full=withContext(Dispatchers.IO){Wiki.enrich(e)}; chosen.add(full); save(); recommendationSeed=full; recommendations=emptyList(); message="Добавлено на шкалу. Можно искать события этого периода." }
-                                            catch(ex:Exception) { chosen.add(e); save(); message="Статья добавлена, но даты загрузить не удалось" }
-                                            finally { busy=false }
-                                        }
-                                    }) { Icon(Icons.Default.Add,"Добавить",tint=Blue) }
-                                }
-                            }
-                        }
+                    if(searchMode=="recommendations" && message.isNotBlank()) {
+                        item { Text(message,color=Muted,fontSize=12.sp) }
                     }
                     item { Text("Выбранные статьи · ${chosen.size}",fontSize=18.sp,fontWeight=FontWeight.Bold,color=Ink) }
                     if(chosen.isEmpty()) item { Text("Добавляй статьи через поиск — даты появятся на общей шкале.",color=Muted,fontSize=13.sp) }
