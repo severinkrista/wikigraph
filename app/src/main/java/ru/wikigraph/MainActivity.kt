@@ -219,7 +219,7 @@ class MainActivity:ComponentActivity() {
                 }
             }
         },topBar={ if(screen!="timeline" && !graphFullscreen) TopAppBar(title={ Text(when { detail!=null -> "Карточка сущности"; screen=="manage" -> "Управление сущностями"; screen=="search" -> "Поиск сущностей"; else -> "График" },fontWeight=FontWeight.Bold,color=Ink) },navigationIcon={ IconButton(onClick={goBack()}) { Icon(Icons.Default.Timeline,"Назад") } },actions={Text(chosen.size.toString(),color=Muted,modifier=Modifier.padding(end=18.dp))},colors=TopAppBarDefaults.topAppBarColors(containerColor=Color(0xFFF7F8FA))) },
-            bottomBar={ if(!graphFullscreen) NavigationBar(containerColor=Color.White) { NavigationBarItem(selected=screen=="timeline",onClick={if(screen=="timeline"){val open=!(showGraphControls||showEntityOverlay);showGraphControls=open;showEntityOverlay=open}else{screen="timeline";showGraphControls=true;showEntityOverlay=true}},icon={Icon(Icons.Default.Timeline,null)},label={Text("График")}); NavigationBarItem(selected=screen=="search",onClick={screen="search";detail=null},icon={Icon(Icons.Default.Search,null)},label={Text("Поиск")}); NavigationBarItem(selected=screen=="manage",onClick={screen="manage";detail=null},icon={Icon(Icons.Default.Visibility,null)},label={Text("Сущности")}) } }) { pad ->
+            bottomBar={ if(!graphFullscreen) NavigationBar(containerColor=Color.White) { NavigationBarItem(selected=screen=="timeline",onClick={screen="timeline";showGraphControls=true;showEntityOverlay=true},icon={Icon(Icons.Default.Timeline,null)},label={Text("График")}); NavigationBarItem(selected=screen=="search",onClick={screen="search";detail=null},icon={Icon(Icons.Default.Search,null)},label={Text("Поиск")}); NavigationBarItem(selected=screen=="manage",onClick={screen="manage";detail=null},icon={Icon(Icons.Default.Visibility,null)},label={Text("Сущности")}) } }) { pad ->
             if(showHiddenEntries) {
                 val hiddenEntries=chosen.filter { it.hidden }.sortedBy { it.title.lowercase(Locale.ROOT) }
                 AlertDialog(
@@ -726,7 +726,7 @@ class MainActivity:ComponentActivity() {
                         Text("Откройте поиск и добавьте нужные статьи",fontSize=12.sp,color=Muted)
                         Button(onClick={screen="search"}) { Text("Найти сущности") }
                     } else Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                        HistoricalGraph(visible,Modifier.fillMaxWidth(),onSelect={detail=it;screen="manage"},fullScreen=true,compact=graphCompact,pulsePageId=pulsePageId,pulseTrigger=pulseTrigger)
+                        HistoricalGraph(visible,Modifier.fillMaxSize(),onSelect={detail=it;screen="manage"},fullScreen=true,compact=graphCompact,pulsePageId=pulsePageId,pulseTrigger=pulseTrigger)
                     }
                     if(showGraphControls || pinGraphControls) {
                         Card(Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(horizontal=8.dp,vertical=6.dp),colors=CardDefaults.cardColors(containerColor=Color.White.copy(alpha=.97f)),elevation=CardDefaults.cardElevation(defaultElevation=6.dp),shape=RoundedCornerShape(14.dp)) {
