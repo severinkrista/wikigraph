@@ -264,7 +264,7 @@ class MainActivity:ComponentActivity() {
                                         Text(cat.size.toString()+" страниц в категории",fontSize=11.sp,color=Muted)
                                         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                                             OutlinedButton(onClick={openCategory(cat)},modifier=Modifier.weight(1f)) { Text("Подкатегории") }
-                                            Button(onClick={selectedCategory=cat;searchMode="articles";results=emptyList();message="Категория выбрана: "+cat.title},modifier=Modifier.weight(1f)) { Text("Выбрать") }
+                                            Button(onClick={scope.launch { busy=true; results=emptyList(); searchMode="articles"; selectedCategory=null; message="Загружаем статьи категории…"; try { results=withContext(Dispatchers.IO){Wiki.searchInCategory(cat.title)}; message=if(results.isEmpty()) "В категории нет доступных статей" else "Категория: "+cat.title } catch(e:Exception) { message="Не удалось загрузить статьи категории" } finally { busy=false } },modifier=Modifier.weight(1f)) { Text("Статьи") }
                                         }
                                     }
                                 }
@@ -581,6 +581,15 @@ private object Wiki {
         val a=json("https://ru.wikipedia.org/w/api.php?action=query&list=allcategories&acprefix="+s+"&aclimit=30&acprop=size&format=json&utf8=1")
             .getJSONObject("query").getJSONArray("allcategories")
         return (0 until a.length()).map { i -> val o=a.getJSONObject(i); CategoryOption(o.optString("*"),o.optInt("size")) }
+    }
+
+    fun subcategories(category:String):List<CategoryOption> {
+        val title=URLEncoder.encode("Категория:"+category,"UTF-8")
+        val a=json("https://ru.wikipedia.org/w/api.php?action=query&list=categorymembers&cmtitle="+title+"&cmtype=subcat&cmlimit=50&format=json&utf8=1")
+            .getJSONObject("query").optJSONArray("categorymembers") ?: return emptyList()
+        return (0 until a.length()).map { i ->
+            CategoryOption(a.getJSONObject(i).optString("title").removePrefix("Категория:").removePrefix("Category:"))
+        }.sortedBy { it.title.lowercase(Locale.ROOT) }
     }
 
     fun searchInCategory(category:String):List<Entry> {
