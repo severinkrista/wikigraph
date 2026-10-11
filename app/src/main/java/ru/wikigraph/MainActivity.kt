@@ -49,7 +49,11 @@ private val Green = Color(0xFF328A78)
 private val Amber = Color(0xFFC18A42)
 private val Muted = Color(0xFF758294)
 data class Entry(val title:String, val description:String="", val pageId:Int=0, val wd:String="", val start:Int?=null, val end:Int?=null, val kind:String="Сущность", val url:String="https://ru.wikipedia.org") {
-    val color get() = when(kind) { "Человек" -> Amber; "Событие" -> Green; "Эпоха" -> Blue; else -> Ink }
+    val color get() = listOf(
+        Color(0xFF557DB8), Color(0xFF328A78), Color(0xFFC18A42), Color(0xFF9A69B5),
+        Color(0xFFD45D79), Color(0xFF458FBD), Color(0xFF7A9D38), Color(0xFFCC7045),
+        Color(0xFF5B6BBF), Color(0xFF299D91), Color(0xFFB85C9E), Color(0xFF8A7658)
+    )[Math.floorMod(pageId, 12)]
     val dates get() = if(start==null) "Даты не найдены" else if(end!=null && end!=start) year(start!!) + " — " + year(end!!) else year(start!!)
 }
 private fun year(y:Int)= if(y<0) (-y).toString()+" до н. э." else if(y==0) "ок. 1 до н. э." else y.toString()
@@ -75,8 +79,8 @@ class MainActivity:ComponentActivity() {
     fun save() { val a=org.json.JSONArray(); chosen.forEach { e -> a.put(JSONObject().apply { put("title",e.title);put("description",e.description);put("pageId",e.pageId);put("wd",e.wd);put("start",e.start?:JSONObject.NULL);put("end",e.end?:JSONObject.NULL);put("kind",e.kind);put("url",e.url) }) }; prefs.edit().putString("entries",a.toString()).apply() }
     fun search() { if(query.isBlank()) return; scope.launch { busy=true; message=""; try { results=withContext(Dispatchers.IO){ Wiki.search(query.trim()) }; if(results.isEmpty()) message="Ничего не найдено" } catch(e:Exception) { message="Ошибка загрузки. Проверьте интернет." } finally { busy=false } } }
     MaterialTheme(colorScheme=lightColorScheme(primary=Ink,secondary=Green,background=Color(0xFFF7F8FA),surface=Color.White)) {
-        Scaffold(topBar={ TopAppBar(title={Column { Text("WikiGraph",fontWeight=FontWeight.Bold,color=Ink); Text("История на одной шкале",fontSize=12.sp,color=Muted) }},actions={Text(chosen.size.toString(),color=Muted,modifier=Modifier.padding(end=18.dp))},colors=TopAppBarDefaults.topAppBarColors(containerColor=Color(0xFFF7F8FA))) },
-            bottomBar={ NavigationBar(containerColor=Color.White) { NavigationBarItem(selected=screen=="timeline",onClick={screen="timeline"},icon={Icon(Icons.Default.Timeline,null)},label={Text("Шкала")}); NavigationBarItem(selected=screen=="search",onClick={screen="search"},icon={Icon(Icons.Default.Search,null)},label={Text("Поиск статей")}) } }) { pad ->
+        Scaffold(topBar={ if(!graphFullscreen) TopAppBar(title={Column { Text("WikiGraph",fontWeight=FontWeight.Bold,color=Ink); Text("История на одной шкале",fontSize=12.sp,color=Muted) }},actions={Text(chosen.size.toString(),color=Muted,modifier=Modifier.padding(end=18.dp))},colors=TopAppBarDefaults.topAppBarColors(containerColor=Color(0xFFF7F8FA))) },
+            bottomBar={ if(!graphFullscreen) NavigationBar(containerColor=Color.White) { NavigationBarItem(selected=screen=="timeline",onClick={screen="timeline"},icon={Icon(Icons.Default.Timeline,null)},label={Text("График")}); NavigationBarItem(selected=screen=="search",onClick={screen="search"},icon={Icon(Icons.Default.Search,null)},label={Text("Поиск статей")}) } }) { pad ->
             if(showPreview && screen=="search") {
                 AlertDialog(onDismissRequest={showPreview=false},title={Text("Добавлено на график · ${chosen.size}")},text={
                     if(chosen.isEmpty()) Text("Пока ничего не выбрано.")
