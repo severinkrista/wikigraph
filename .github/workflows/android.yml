@@ -24,10 +24,19 @@ jobs:
           gradle-version: "8.9"
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
-      - name: Upload APK
+      - name: Name APK with app version
+        id: apk
+        shell: bash
+        run: |
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          APK="wikigraph-${VERSION}-debug.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "app/build/outputs/apk/debug/${APK}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "path=app/build/outputs/apk/debug/${APK}" >> "$GITHUB_OUTPUT"
+      - name: Upload versioned APK
         uses: actions/upload-artifact@v4
         with:
-          name: wikigraph-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: wikigraph-${{ steps.apk.outputs.version }}-debug-apk
+          path: ${{ steps.apk.outputs.path }}
           if-no-files-found: error
           retention-days: 30
