@@ -1,4 +1,4 @@
-# WikiGraph 2.0.0
+# WikiGraph 2.0.1
 
 Android-приложение для построения собственной исторической временной шкалы из статей русской Википедии.
 
@@ -34,7 +34,7 @@ Android-приложение для построения собственной 
 
 Откройте репозиторий в Android Studio, дождитесь синхронизации Gradle и выберите **Build → Build Bundle(s) / APK(s) → Build APK(s)**.
 
-Автоматическая сборка доступна во вкладке **Actions → Android APK**. После успешного выполнения workflow публикует APK-артефакт с версией в имени, например `wikigraph-2.0.0-debug.apk`. Версия приложения задаётся в `app/build.gradle.kts` параметрами `versionCode` и `versionName`.
+Автоматическая сборка доступна во вкладке **Actions → Android APK**. После успешного выполнения workflow публикует APK-артефакт с версией в имени, например `wikigraph-2.0.1-debug.apk`. Версия приложения задаётся в `app/build.gradle.kts` параметрами `versionCode` и `versionName`.
 
 Требования: JDK 17, Android SDK Platform 35, Gradle 8.9.
 
