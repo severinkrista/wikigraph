@@ -134,7 +134,11 @@ private fun parseEntries(raw:String):List<Entry> = runCatching {
     (0 until a.length()).map { i ->
         val o=a.getJSONObject(i); val opts=o.optJSONArray("dateOptions")?:org.json.JSONArray()
         val dates=(0 until opts.length()).map { j -> val d=opts.getJSONObject(j); DateOption(d.optString("label"),if(d.isNull("start")) null else d.optInt("start"),if(d.isNull("end")) null else d.optInt("end"),if(d.isNull("startDate")) null else d.optString("startDate"),if(d.isNull("endDate")) null else d.optString("endDate"),d.optString("precision","year")) }
-        Entry(o.optString("title"),o.optString("description"),o.optInt("pageId"),o.optString("wd"),if(o.isNull("start")) null else o.optInt("start"),if(o.isNull("end")) null else o.optInt("end"),o.optString("kind","Сущность"),o.optString("url"),dates,o.optInt("selectedDateOption",0),o.optBoolean("hidden",false),(o.optJSONArray("categories")?:org.json.JSONArray()).let { a -> (0 until a.length()).map { a.optString(it) } },if(o.isNull("startDate")) null else o.optString("startDate"),if(o.isNull("endDate")) null else o.optString("endDate"),o.optString("datePrecision","year"))
+        val legacyStart=if(o.isNull("start")) null else o.optInt("start")
+        val legacyEnd=if(o.isNull("end")) null else o.optInt("end")
+        val storedStartDate=if(o.isNull("startDate")) legacyStart?.toString() else o.optString("startDate")
+        val storedEndDate=if(o.isNull("endDate")) legacyEnd?.toString() else o.optString("endDate")
+        Entry(o.optString("title"),o.optString("description"),o.optInt("pageId"),o.optString("wd"),legacyStart,legacyEnd,o.optString("kind","Сущность"),o.optString("url"),dates,o.optInt("selectedDateOption",0),o.optBoolean("hidden",false),(o.optJSONArray("categories")?:org.json.JSONArray()).let { a -> (0 until a.length()).map { a.optString(it) } },storedStartDate,storedEndDate,o.optString("datePrecision","year"))
     }
 }.getOrDefault(emptyList())
 private fun year(y:Int)= if(y<0) (-y).toString()+" до н. э." else if(y==0) "ок. 1 до н. э." else y.toString()
@@ -386,6 +390,13 @@ class MainActivity:ComponentActivity() {
                     Text(detail!!.title,fontSize=26.sp,fontWeight=FontWeight.Bold,color=Ink)
                     Text(detail!!.kind.uppercase(Locale.getDefault()),color=detail!!.color)
                     Text(detail!!.dates,fontSize=22.sp,fontWeight=FontWeight.SemiBold)
+                    val precisionText=when {
+                        (detail!!.startDate?.length ?: 0)>=10 || (detail!!.endDate?.length ?: 0)>=10 -> "Точность: день"
+                        (detail!!.startDate?.length ?: 0)==7 || (detail!!.endDate?.length ?: 0)==7 -> "Точность: месяц"
+                        detail!!.startDate!=null || detail!!.endDate!=null || detail!!.start!=null -> "Точность: год"
+                        else -> "Точность дат не определена"
+                    }
+                    Text(precisionText,fontSize=12.sp,color=Muted)
                     OutlinedButton(onClick={draftStartDate=detail!!.startDate ?: detail!!.start?.toString().orEmpty();draftEndDate=detail!!.endDate ?: detail!!.end?.toString().orEmpty();showDateEditor=true},modifier=Modifier.fillMaxWidth()){Text("Изменить даты вручную")}
                     if(detail!!.dateOptions.size>1) OutlinedButton(onClick={dateDraftOptionIndex=detail!!.selectedDateOption.coerceIn(0,detail!!.dateOptions.lastIndex);dateOptionQuery="";dateOptionFilter="Все";showDateOptions=true},modifier=Modifier.fillMaxWidth()){Text("Выбрать дату или диапазон · ${detail!!.dateOptions.size}")}
                     if(detail!!.description.isNotBlank()) {
@@ -726,8 +737,12 @@ class MainActivity:ComponentActivity() {
         }
     }
     val timelinePoints=entries.filter { it.start!=null || it.startDate!=null }.flatMap { listOf(timelineValue(it,false),timelineValue(it,true)) }.ifEmpty { listOf(0.0,36524.0) }
-    val low=timelinePoints.minOrNull() ?: 0.0
-    val high=timelinePoints.maxOrNull() ?: 36524.0
+    val rawLow=timelinePoints.minOrNull() ?: 0.0
+    val rawHigh=timelinePoints.maxOrNull() ?: 36524.0
+    val rawSpan=(rawHigh-rawLow).coerceAtLeast(1.0)
+    val padding=if(rawSpan<365.0) 365.0 else rawSpan*0.05
+    val low=rawLow-padding
+    val high=rawHigh+padding
     val span=(high-low).coerceAtLeast(1.0)
     val baseLaneHeight=when { compact && fullScreen -> 42.dp; compact -> 30.dp; fullScreen -> 66.dp; else -> 52.dp }
     var zoom by remember(entries) { mutableStateOf(1f) }
@@ -736,6 +751,15 @@ class MainActivity:ComponentActivity() {
     val totalHeight=(entries.size*laneHeight.value+(if(compact) 30 else 44)).dp
     var panFraction by remember(entries) { mutableStateOf(0f) }
     var selectedValue by remember(entries) { mutableStateOf<Double?>(null) }
+    fun setTimeScale(targetDays:Double) {
+        val nextZoom=(span/targetDays).coerceIn(1.0,10000.0).toFloat()
+        val visible=span/nextZoom.toDouble()
+        val center=(selectedValue ?: ((low+high)/2.0)).coerceIn(low,high)
+        val maxPan=(span-visible).coerceAtLeast(0.0)
+        val desiredLeft=(center-visible/2.0-low).coerceAtLeast(0.0)
+        zoom=nextZoom
+        panFraction=if(maxPan<=0.0) 0f else (desiredLeft/maxPan).toFloat().coerceIn(0f,1f)
+    }
     Column(modifier) {
         Row(Modifier.fillMaxWidth().padding(horizontal=6.dp, vertical=2.dp), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.spacedBy(2.dp)) {
             Text(when { span/zoom.toDouble()<100.0 -> "Д"; span/zoom.toDouble()<900.0 -> "М"; else -> "Г" },fontSize=11.sp,color=Muted,fontWeight=FontWeight.SemiBold)
@@ -749,6 +773,12 @@ class MainActivity:ComponentActivity() {
             TextButton(onClick={ zoomY=(zoomY*1.25f).coerceAtMost(4f) }, contentPadding=PaddingValues(horizontal=6.dp, vertical=0.dp), modifier=Modifier.height(30.dp)) { Text("+") }
             Spacer(Modifier.weight(1f))
             TextButton(onClick={ zoom=1f; zoomY=1f; panFraction=0f; selectedValue=null }, contentPadding=PaddingValues(horizontal=5.dp, vertical=0.dp), modifier=Modifier.height(30.dp)) { Text("↺",fontSize=16.sp) }
+        }
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=6.dp, vertical=1.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)) {
+            Text("Масштаб",fontSize=11.sp,color=Muted)
+            FilterChip(selected=span/zoom.toDouble()>=900.0,onClick={setTimeScale(3652.425)},label={Text("Годы",fontSize=11.sp)},modifier=Modifier.height(30.dp))
+            FilterChip(selected=span/zoom.toDouble() in 100.0..<900.0,onClick={setTimeScale(365.2425)},label={Text("Месяцы",fontSize=11.sp)},modifier=Modifier.height(30.dp))
+            FilterChip(selected=span/zoom.toDouble()<100.0,onClick={setTimeScale(30.0)},label={Text("Дни",fontSize=11.sp)},modifier=Modifier.height(30.dp))
         }
         Canvas(
             Modifier.fillMaxWidth().height(totalHeight).clip(RoundedCornerShape(14.dp))
