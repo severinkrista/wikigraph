@@ -193,8 +193,8 @@ class MainActivity:ComponentActivity() {
     var dateDraftOptionIndex by remember { mutableIntStateOf(0) }; var dateDraftOptionIndices by remember { mutableStateOf(setOf<Int>()) }
     var savedScales by remember { mutableStateOf(org.json.JSONArray(prefs.getString("scales","[]"))) }
     val scope= rememberCoroutineScope()
-    fun goBack() { when { showDateOptions -> showDateOptions=false; showDateEditor -> showDateEditor=false; showScales -> showScales=false; showPreview -> showPreview=false; detail!=null -> { detail=null; screen="timeline" }; graphFullscreen -> { graphFullscreen=false; (context as? ComponentActivity)?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }; screen=="search" -> screen="timeline" } }
-    BackHandler(enabled=showDateOptions||showDateEditor||showScales||showHiddenEntries||showPreview||detail!=null||graphFullscreen||screen=="search") { if(showHiddenEntries) showHiddenEntries=false else goBack() }
+    fun goBack() { when { showDateOptions -> showDateOptions=false; showDateEditor -> showDateEditor=false; showScales -> showScales=false; showPreview -> showPreview=false; detail!=null -> { detail=null; screen="timeline" }; graphFullscreen -> { graphFullscreen=false; (context as? ComponentActivity)?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }; screen=="search" || screen=="manage" -> screen="timeline" } }
+    BackHandler(enabled=showDateOptions||showDateEditor||showScales||showHiddenEntries||showPreview||detail!=null||graphFullscreen||screen=="search"||screen=="manage") { if(showHiddenEntries) showHiddenEntries=false else goBack() }
     fun save() { prefs.edit().putString("entries",serializeEntries(chosen)).apply() }
     fun search() { if(query.isBlank()) { message="Введите название статьи для поиска"; return }; scope.launch { busy=true; results=emptyList(); message=""; try { results=withContext(Dispatchers.IO){ Wiki.search(query.trim()) }; if(results.isEmpty()) message="По этому запросу статьи не найдены" } catch(e:Exception) { message="Ошибка загрузки статей. Проверьте интернет." } finally { busy=false } } }
     fun loadCategories() { if(categoryQuery.isBlank()) { message="Введите тему или начало названия категории"; return }; scope.launch { categoryBusy=true; categoryHasSearched=true; browseParent=null; browseCategories=emptyList(); message=""; try { categories=withContext(Dispatchers.IO){ Wiki.searchCategories(categoryQuery) }; browseCategories=categories; if(categories.isEmpty()) message="Категории не найдены — попробуйте более короткий запрос" } catch(e:Exception) { message="Не удалось загрузить категории" } finally { categoryBusy=false } } }
@@ -734,7 +734,7 @@ class MainActivity:ComponentActivity() {
                                 Row(verticalAlignment=Alignment.CenterVertically) {
                                     Text("Параметры графика",Modifier.weight(1f),fontWeight=FontWeight.SemiBold,color=Ink,fontSize=13.sp)
                                     IconButton(onClick={pinGraphControls=!pinGraphControls},modifier=Modifier.size(34.dp)) { Icon(Icons.Default.Timeline,if(pinGraphControls) "Открепить панель" else "Закрепить панель",tint=if(pinGraphControls) Blue else Muted) }
-                                    IconButton(onClick={showGraphControls=false;if(!pinGraphControls) showEntityOverlay=false},modifier=Modifier.size(34.dp)) { Icon(Icons.Default.VisibilityOff,"Скрыть панели",tint=Muted) }
+                                    IconButton(onClick={showGraphControls=false;pinGraphControls=false;showEntityOverlay=false;pinEntityOverlay=false},modifier=Modifier.size(34.dp)) { Icon(Icons.Default.VisibilityOff,"Скрыть панели",tint=Muted) }
                                 }
                                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(4.dp),verticalAlignment=Alignment.CenterVertically) {
                                     TextButton(onClick={showEntityOverlay=!showEntityOverlay}) { Text(if(showEntityOverlay) "Скрыть список" else "Список · ${chosen.size}") }
@@ -751,7 +751,7 @@ class MainActivity:ComponentActivity() {
                                 Row(verticalAlignment=Alignment.CenterVertically) {
                                     Text("Сущности · ${chosen.size}",Modifier.weight(1f),fontWeight=FontWeight.SemiBold,color=Ink,fontSize=13.sp)
                                     IconButton(onClick={pinEntityOverlay=!pinEntityOverlay},modifier=Modifier.size(32.dp)) { Icon(Icons.Default.Timeline,if(pinEntityOverlay) "Открепить список" else "Закрепить список",tint=if(pinEntityOverlay) Blue else Muted) }
-                                    IconButton(onClick={showEntityOverlay=false},modifier=Modifier.size(32.dp)) { Icon(Icons.Default.VisibilityOff,"Скрыть список",tint=Muted) }
+                                    IconButton(onClick={showEntityOverlay=false;pinEntityOverlay=false},modifier=Modifier.size(32.dp)) { Icon(Icons.Default.VisibilityOff,"Скрыть список",tint=Muted) }
                                 }
                                 LazyColumn(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(2.dp)) {
                                     items(chosen.sortedBy { it.start?:Int.MAX_VALUE },key={"overlay-"+it.pageId}) { e ->
