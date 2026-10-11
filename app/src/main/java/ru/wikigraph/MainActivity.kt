@@ -529,7 +529,7 @@ private object Wiki {
     fun recommend(seed:Entry,radius:Int):List<Entry> {
         val center=seed.start ?: seed.dateOptions.getOrNull(seed.selectedDateOption)?.start
             ?: seed.dateOptions.firstNotNullOfOrNull { it.start } ?: return emptyList()
-        val years=(center-radius..center+radius).filter { it!=center }
+        val years=(center-radius..center+radius).toList()
         val temporal=mutableListOf<Entry>()
         // MediaWiki search understands OR expressions; search the whole window in one request.
         runCatching {
