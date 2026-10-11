@@ -738,7 +738,7 @@ class MainActivity:ComponentActivity() {
     var selectedValue by remember(entries) { mutableStateOf<Double?>(null) }
     Column(modifier) {
         Row(Modifier.fillMaxWidth().padding(horizontal=6.dp, vertical=2.dp), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.spacedBy(2.dp)) {
-            Text(when { span/zoom<100.0 -> "Д"; span/zoom<900.0 -> "М"; else -> "Г" },fontSize=11.sp,color=Muted,fontWeight=FontWeight.SemiBold)
+            Text(when { span/zoom.toDouble()<100.0 -> "Д"; span/zoom.toDouble()<900.0 -> "М"; else -> "Г" },fontSize=11.sp,color=Muted,fontWeight=FontWeight.SemiBold)
             TextButton(onClick={ zoom=(zoom/1.5f).coerceAtLeast(1f); if(zoom<=1f) panFraction=0f }, contentPadding=PaddingValues(horizontal=6.dp, vertical=0.dp), modifier=Modifier.height(30.dp)) { Text("−") }
             Text("${String.format(Locale.getDefault(),"%.1f",zoom)}×",fontSize=11.sp,color=Ink,maxLines=1)
             TextButton(onClick={ zoom=(zoom*1.5f).coerceAtMost(10000f) }, contentPadding=PaddingValues(horizontal=6.dp, vertical=0.dp), modifier=Modifier.height(30.dp)) { Text("+") }
