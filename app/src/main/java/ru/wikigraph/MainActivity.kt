@@ -293,7 +293,14 @@ class MainActivity:ComponentActivity() {
                     if(searchMode=="articles" && results.isNotEmpty()) {
                         item { Label("ПРЯМОЙ ПОИСК",results.size.toString()) }
                         items(results,key={ "r"+it.pageId }) { e ->
-                            Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(14.dp)) {
+                            Card(Modifier.fillMaxWidth().clickable {
+                                scope.launch {
+                                    busy=true
+                                    try { detail=withContext(Dispatchers.IO){Wiki.enrich(e)} }
+                                    catch(ex:Exception) { detail=e; message="Не все сведения удалось загрузить" }
+                                    finally { busy=false }
+                                }
+                            },colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(14.dp)) {
                                 Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
                                     Box(Modifier.size(10.dp).clip(CircleShape).background(e.color))
                                     Column(Modifier.weight(1f).padding(horizontal=12.dp)) {
