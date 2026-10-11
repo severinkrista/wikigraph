@@ -319,10 +319,28 @@ private object Wiki {
     private fun json(url:String):JSONObject { val c=URL(url).openConnection() as HttpURLConnection;c.connectTimeout=12000;c.readTimeout=12000;c.setRequestProperty("User-Agent","WikiGraphAndroid/0.1");return try{JSONObject(c.inputStream.bufferedReader().use{it.readText()})}finally{c.disconnect()} }
     fun search(q:String):List<Entry> { val s=URLEncoder.encode(q,"UTF-8");val a=json("https://ru.wikipedia.org/w/api.php?action=query&list=search&srsearch="+s+"&srnamespace=0&srlimit=12&format=json&utf8=1").getJSONObject("query").getJSONArray("search");return (0 until a.length()).map{i->val o=a.getJSONObject(i);val title=o.getString("title");Entry(title,android.text.Html.fromHtml(o.optString("snippet").replace(Regex("<.*?>"),""),android.text.Html.FROM_HTML_MODE_COMPACT).toString(),o.getInt("pageid"),url="https://ru.wikipedia.org/wiki/"+URLEncoder.encode(title.replace(' ','_'),"UTF-8").replace("+","%20"))} }
     fun enrich(e:Entry):Entry { val q=URLEncoder.encode(e.title,"UTF-8");val pages=json("https://ru.wikipedia.org/w/api.php?action=query&prop=pageprops&ppprop=wikibase_item&titles="+q+"&format=json").getJSONObject("query").getJSONObject("pages");val key=pages.keys().asSequence().firstOrNull()?:return e;val wd=pages.getJSONObject(key).optJSONObject("pageprops")?.optString("wikibase_item").orEmpty();if(wd.isBlank()||wd=="null")return e;val entity=json("https://www.wikidata.org/wiki/Special:EntityData/"+wd+".json").getJSONObject("entities").getJSONObject(wd);val claims=entity.optJSONObject("claims")?:return e.copy(wd=wd)
-        fun yr(p:String):Int? {val a=claims.optJSONArray(p)?:return null;if(a.length()==0)return null;val value=a.getJSONObject(0).optJSONObject("mainsnak")?.optJSONObject("datavalue")?.optJSONObject("value")?.optString("time")?:return null;return Regex("^([+-]?\\d{1,16})").find(value)?.groupValues?.get(1)?.toIntOrNull()}
-        val birth=yr("P569");val death=yr("P570");val start=yr("P580")?:yr("P571")?:yr("P585")?:birth;val end=yr("P582")?:yr("P576")?:death
-        val kind=when{birth!=null||death!=null->"Человек";yr("P580")!=null||yr("P582")!=null||yr("P571")!=null->"Событие";else->"Сущность"}
+        fun years(p:String):List<Int> {
+            val a=claims.optJSONArray(p)?:return emptyList()
+            return (0 until a.length()).mapNotNull { i ->
+                val value=a.getJSONObject(i).optJSONObject("mainsnak")?.optJSONObject("datavalue")?.optJSONObject("value")?.optString("time") ?: return@mapNotNull null
+                Regex("^([+-]?\\d{1,16})").find(value)?.groupValues?.get(1)?.toIntOrNull()
+            }.distinct()
+        }
+        fun yr(p:String)=years(p).firstOrNull()
+        val birth=yr("P569"); val death=yr("P570")
+        val start=yr("P580")?:yr("P571")?:yr("P585")?:birth
+        val end=yr("P582")?:yr("P576")?:death
+        val options=mutableListOf<DateOption>()
+        fun addOptions(property:String,label:String) { years(property).forEachIndexed { i,y -> options.add(DateOption(if(years(property).size>1) "$label · ${i+1}" else label,y,null)) } }
+        val starts=years("P580"); val ends=years("P582")
+        if(starts.isNotEmpty()) starts.forEachIndexed { i,y -> options.add(DateOption("Начало периода ${i+1}",y,ends.getOrNull(i) ?: ends.firstOrNull())) }
+        val inceptions=years("P571"); val dissolved=years("P576")
+        if(inceptions.isNotEmpty()) inceptions.forEachIndexed { i,y -> options.add(DateOption("Основание / существование ${i+1}",y,dissolved.getOrNull(i) ?: dissolved.firstOrNull())) }
+        addOptions("P569","Рождение"); addOptions("P570","Смерть"); addOptions("P585","Дата события"); addOptions("P576","Прекращение")
+        if(start!=null && options.none { it.start==start && it.end==end }) options.add(0,DateOption("Основной период",start,end))
+        val defaultIndex=options.indexOfFirst { it.start==start && it.end==end }.coerceAtLeast(0)
+        val kind=when { birth!=null||death!=null -> "Человек"; starts.isNotEmpty()||ends.isNotEmpty()||inceptions.isNotEmpty() -> "Событие"; else -> "Сущность" }
         val desc=entity.optJSONObject("descriptions")?.optJSONObject("ru")?.optString("value").orEmpty().ifBlank{e.description}
-        return e.copy(description=desc,wd=wd,start=start,end=end,kind=kind)
+        return e.copy(description=desc,wd=wd,start=start,end=end,kind=kind,dateOptions=options.distinctBy { Triple(it.label,it.start,it.end) },selectedDateOption=defaultIndex)
     }
 }
