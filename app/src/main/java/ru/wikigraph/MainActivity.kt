@@ -296,7 +296,7 @@ class MainActivity:ComponentActivity() {
                             if(!startOk || !endOk) message="Проверьте формат дат"
                             else {
                                 val precision=listOfNotNull(if(startText!=null) parseDateInput(startText)?.second else null,if(endText!=null) parseDateInput(endText)?.second else null).maxByOrNull { listOf("year","month","day").indexOf(it) } ?: "year"
-                                val updated=owner.copy(start=startText?.let { yearFromDate(it) },end=endText?.let { yearFromDate(it) },startDate=startText,endDate=endText,datePrecision=precision)
+                                val updated=owner.copy(start=startText?.let { yearFromDate(it) },end=endText?.let { yearFromDate(it) },startDate=startText,endDate=endText,datePrecision=precision,selectedDateOptions=emptyList())
                                 val at=chosen.indexOfFirst { it.pageId==owner.pageId }; if(at>=0) chosen[at]=updated
                                 detail=updated; save(); showDateEditor=false; message="Даты сохранены"
                             }
