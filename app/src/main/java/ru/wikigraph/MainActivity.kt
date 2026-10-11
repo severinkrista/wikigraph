@@ -303,7 +303,7 @@ class MainActivity:ComponentActivity() {
             TextButton(onClick={ zoom=(zoom/1.5f).coerceAtLeast(1f); if(zoom<=1f) panFraction=0f }) { Text("−") }
             Text("${String.format(Locale.getDefault(),"%.1f",zoom)}×",fontSize=12.sp,color=Muted)
             TextButton(onClick={ zoom=(zoom*1.5f).coerceAtMost(32f) }) { Text("+") }
-            TextButton(onClick={ zoom=1f; panFraction=0f; selectedYear=null }) { Text("Сброс") }
+            TextButton(onClick={ zoom=1f; panFraction=0f; selectedYear=null }) { Text("↺") }
         }
         Canvas(
             Modifier.fillMaxWidth().height(totalHeight).clip(RoundedCornerShape(14.dp))
