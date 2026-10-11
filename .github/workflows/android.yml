@@ -35,7 +35,11 @@ jobs:
           KEYSTORE="app/build/signing/debug.keystore"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)"
           EXPECTED="$(keytool -list -v -keystore "$KEYSTORE" -storetype PKCS12 -storepass android -alias androiddebugkey | awk -F': ' '/SHA256:/{print $2}' | tr -d ':')"
-          ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2}' | tr -d ':')"
+          # apksigner may write certificate details to stderr; capture both streams.
+          SIGNATURE_INFO="$("$APKSIGNER" verify --print-certs "$APK" 2>&1)"
+          echo "$SIGNATURE_INFO"
+          ACTUAL="$(printf '%s\\n' "$SIGNATURE_INFO" | grep -Eio '[0-9a-f]{64}' | head -n 1 | tr '[:lower:]' '[:upper:]')"
+          EXPECTED="$(printf '%s' "$EXPECTED" | tr '[:lower:]' '[:upper:]')"
           echo "Expected signing certificate SHA-256: ${EXPECTED:-<not found>}"
           echo "APK signing certificate SHA-256:      ${ACTUAL:-<not found>}"
           if [ -z "$EXPECTED" ] || [ -z "$ACTUAL" ]; then
