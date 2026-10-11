@@ -261,7 +261,7 @@ class MainActivity:ComponentActivity() {
                             option.label.contains(dateOptionQuery,ignoreCase=true) ||
                             (option.start?.let { year(it) }?.contains(dateOptionQuery,ignoreCase=true) == true) ||
                             (option.end?.let { year(it) }?.contains(dateOptionQuery,ignoreCase=true) == true)
-                        val isRange=option.start!=null && option.end!=null && option.start!=option.end
+                        val isRange=option.endDate!=null || (option.start!=null && option.end!=null && option.start!=option.end)
                         val matchesFilter=when(dateOptionFilter) {
                             "Диапазоны" -> isRange
                             "Одиночные даты" -> !isRange
@@ -306,7 +306,11 @@ class MainActivity:ComponentActivity() {
                                         RadioButton(selected=selected,onClick={dateDraftOptionIndex=index})
                                         Column(Modifier.weight(1f).padding(start=8.dp,top=5.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                             Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                                                Text(if(option.start==null) "Дата не определена" else if(isRange) "${year(option.start)} — ${year(option.end!!)}" else year(option.start),fontWeight=FontWeight.Bold,fontSize=16.sp,color=Ink)
+                                                Text(if(option.start==null && option.startDate==null) "Дата не определена" else {
+                                                    val first=option.startDate?.let { displayDate(it) } ?: option.start?.let { year(it) } ?: "?"
+                                                    val last=option.endDate?.let { displayDate(it) } ?: option.end?.let { year(it) }
+                                                    if(isRange && last!=null) "$first — $last" else first
+                                                },fontWeight=FontWeight.Bold,fontSize=16.sp,color=Ink)
                                                 if(isRange) Surface(color=Green.copy(alpha=.12f),shape=RoundedCornerShape(6.dp)) { Text("ПЕРИОД",Modifier.padding(horizontal=6.dp,vertical=3.dp),fontSize=9.sp,color=Green,fontWeight=FontWeight.Bold) }
                                             }
                                             Text(option.label,fontSize=12.sp,color=Muted)
@@ -322,7 +326,7 @@ class MainActivity:ComponentActivity() {
                             val index=dateDraftOptionIndex.coerceIn(0,dateOwner.dateOptions.lastIndex.coerceAtLeast(0))
                             val option=dateOwner.dateOptions.getOrNull(index)
                             if(option!=null) {
-                                val updated=dateOwner.copy(start=option.start,end=option.end,selectedDateOption=index)
+                                val updated=dateOwner.copy(start=option.start,end=option.end,startDate=option.startDate,endDate=option.endDate,datePrecision=option.precision,selectedDateOption=index)
                                 val at=chosen.indexOfFirst { it.pageId==dateOwner.pageId }
                                 if(at>=0) chosen[at]=updated
                                 detail=updated
@@ -689,30 +693,30 @@ class MainActivity:ComponentActivity() {
             pulseOn=false
         }
     }
-    val dates=entries.flatMap { listOfNotNull(it.start,it.end) }
-    val low=(dates.minOrNull()?:0).toFloat()
-    val high=(dates.maxOrNull()?:100).toFloat()
-    val span=(high-low).coerceAtLeast(1f)
+    val timelinePoints=entries.flatMap { listOf(timelineValue(it,false),timelineValue(it,true)) }
+    val low=timelinePoints.minOrNull() ?: 0.0
+    val high=timelinePoints.maxOrNull() ?: 36524.0
+    val span=(high-low).coerceAtLeast(1.0)
     val baseLaneHeight=when { compact && fullScreen -> 42.dp; compact -> 30.dp; fullScreen -> 66.dp; else -> 52.dp }
     var zoom by remember(entries) { mutableStateOf(1f) }
     var zoomY by remember(entries) { mutableStateOf(1f) }
     val laneHeight=baseLaneHeight*zoomY
     val totalHeight=(entries.size*laneHeight.value+(if(compact) 30 else 44)).dp
     var panFraction by remember(entries) { mutableStateOf(0f) }
-    var selectedYear by remember(entries) { mutableStateOf<Int?>(null) }
+    var selectedValue by remember(entries) { mutableStateOf<Double?>(null) }
     Column(modifier) {
         Row(Modifier.fillMaxWidth().padding(horizontal=6.dp, vertical=2.dp), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.spacedBy(2.dp)) {
-            Text("Г",fontSize=11.sp,color=Muted,fontWeight=FontWeight.SemiBold)
+            Text(when { span/zoom<100.0 -> "Д"; span/zoom<900.0 -> "М"; else -> "Г" },fontSize=11.sp,color=Muted,fontWeight=FontWeight.SemiBold)
             TextButton(onClick={ zoom=(zoom/1.5f).coerceAtLeast(1f); if(zoom<=1f) panFraction=0f }, contentPadding=PaddingValues(horizontal=6.dp, vertical=0.dp), modifier=Modifier.height(30.dp)) { Text("−") }
             Text("${String.format(Locale.getDefault(),"%.1f",zoom)}×",fontSize=11.sp,color=Ink,maxLines=1)
-            TextButton(onClick={ zoom=(zoom*1.5f).coerceAtMost(32f) }, contentPadding=PaddingValues(horizontal=6.dp, vertical=0.dp), modifier=Modifier.height(30.dp)) { Text("+") }
+            TextButton(onClick={ zoom=(zoom*1.5f).coerceAtMost(10000f) }, contentPadding=PaddingValues(horizontal=6.dp, vertical=0.dp), modifier=Modifier.height(30.dp)) { Text("+") }
             Spacer(Modifier.width(4.dp))
             Text("В",fontSize=11.sp,color=Muted,fontWeight=FontWeight.SemiBold)
             TextButton(onClick={ zoomY=(zoomY/1.25f).coerceAtLeast(0.65f) }, contentPadding=PaddingValues(horizontal=6.dp, vertical=0.dp), modifier=Modifier.height(30.dp)) { Text("−") }
             Text("${String.format(Locale.getDefault(),"%.1f",zoomY)}×",fontSize=11.sp,color=Ink,maxLines=1)
             TextButton(onClick={ zoomY=(zoomY*1.25f).coerceAtMost(4f) }, contentPadding=PaddingValues(horizontal=6.dp, vertical=0.dp), modifier=Modifier.height(30.dp)) { Text("+") }
             Spacer(Modifier.weight(1f))
-            TextButton(onClick={ zoom=1f; zoomY=1f; panFraction=0f; selectedYear=null }, contentPadding=PaddingValues(horizontal=5.dp, vertical=0.dp), modifier=Modifier.height(30.dp)) { Text("↺",fontSize=16.sp) }
+            TextButton(onClick={ zoom=1f; zoomY=1f; panFraction=0f; selectedValue=null }, contentPadding=PaddingValues(horizontal=5.dp, vertical=0.dp), modifier=Modifier.height(30.dp)) { Text("↺",fontSize=16.sp) }
         }
         Canvas(
             Modifier.fillMaxWidth().height(totalHeight).clip(RoundedCornerShape(14.dp))
@@ -738,7 +742,7 @@ class MainActivity:ComponentActivity() {
                                     val left=88.dp.toPx()
                                     val plot=(size.width-left-12.dp.toPx()).coerceAtLeast(1f)
                                     val oldZoom=zoom
-                                    val newZoom=(oldZoom*(spanNow/oldSpan)).coerceIn(1f,64f)
+                                    val newZoom=(oldZoom*(spanNow/oldSpan)).coerceIn(1f,10000f)
                                     val oldPan=plot*(oldZoom-1f)*panFraction
                                     val anchor=((previousCentroidX!!-left+oldPan)/oldZoom).coerceIn(0f,plot)
                                     val newPan=(anchor*newZoom-(cx-left)).coerceIn(0f,plot*(newZoom-1f))
@@ -760,7 +764,7 @@ class MainActivity:ComponentActivity() {
                                     val maxPan=plot*(zoom-1f)
                                     val pan=maxPan*panFraction
                                     val ratio=((pressed[0].position.x-left+pan)/(plot*zoom)).coerceIn(0f,1f)
-                                    selectedYear=(low+span*ratio).toInt()
+                                    selectedValue=low+span*ratio.toDouble()
                                 }
                             } else {
                                 previousSpan=null
@@ -779,8 +783,8 @@ class MainActivity:ComponentActivity() {
             val contentWidth=plotWidth*zoom
             val maxPan=(contentWidth-plotWidth).coerceAtLeast(0f)
             val pan=maxPan*panFraction
-            val visibleStart=low+span*(pan/contentWidth.coerceAtLeast(1f))
-            val visibleSpan=span/zoom
+            val visibleStart=low+span*(pan/contentWidth.coerceAtLeast(1f)).toDouble()
+            val visibleSpan=span/zoom.toDouble()
             val labelPaint=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
                 color=android.graphics.Color.rgb(35,54,77); textSize=10.sp.toPx()
             }
@@ -790,19 +794,19 @@ class MainActivity:ComponentActivity() {
             for(i in 0..4) {
                 val x=left+plotWidth*i/4
                 drawLine(Color(0xFFE8ECF1),androidx.compose.ui.geometry.Offset(x,axisY),androidx.compose.ui.geometry.Offset(x,size.height),strokeWidth=1.dp.toPx())
-                val tick=(visibleStart+visibleSpan*i/4).toInt()
-                drawContext.canvas.nativeCanvas.drawText(year(tick),x,14.dp.toPx(),tickPaint)
+                val tick=visibleStart+visibleSpan*i/4
+                drawContext.canvas.nativeCanvas.drawText(axisDate(tick,visibleSpan),x,14.dp.toPx(),tickPaint)
             }
             clipRect(left,axisY,size.width-right,size.height) {
             entries.forEachIndexed { i,e ->
                 val cy=axisY+12.dp.toPx()+laneHeight.toPx()*i+laneHeight.toPx()*.5f
                 drawLine(Color(0xFFF0F2F5),androidx.compose.ui.geometry.Offset(left,cy),androidx.compose.ui.geometry.Offset(size.width-right,cy),strokeWidth=1.dp.toPx())
-                val startYear=(e.start?:low.toInt()).toFloat()
-                val endYear=(e.end?:e.start?:low.toInt()).toFloat()
-                val x1=left+((startYear-low)/span)*contentWidth-pan
-                val x2=left+((endYear-low)/span)*contentWidth-pan
+                val startValue=timelineValue(e,false)
+                val endValue=timelineValue(e,true)
+                val x1=left+(((startValue-low)/span).toFloat())*contentWidth-pan
+                val x2=left+(((endValue-low)/span).toFloat())*contentWidth-pan
                 val pulsing=e.pageId==pulsePageId && pulseOn
-                if(e.start!=null && e.end!=null && e.end!=e.start) {
+                if((e.end!=null || e.endDate!=null) && kotlin.math.abs(endValue-startValue)>0.5) {
                     if(pulsing) drawLine(e.color.copy(alpha=.28f),androidx.compose.ui.geometry.Offset(minOf(x1,x2),cy),androidx.compose.ui.geometry.Offset(maxOf(x1,x2),cy),strokeWidth=18.dp.toPx())
                     drawLine(e.color,androidx.compose.ui.geometry.Offset(minOf(x1,x2),cy),androidx.compose.ui.geometry.Offset(maxOf(x1,x2),cy),strokeWidth=if(pulsing) 11.dp.toPx() else 8.dp.toPx())
                     drawCircle(e.color,if(pulsing) 6.dp.toPx() else 4.dp.toPx(),androidx.compose.ui.geometry.Offset((x1+x2)/2,cy))
@@ -814,12 +818,12 @@ class MainActivity:ComponentActivity() {
                 val cy=axisY+12.dp.toPx()+laneHeight.toPx()*i+laneHeight.toPx()*.5f
                 drawContext.canvas.nativeCanvas.drawText(e.title.take(13),4.dp.toPx(),cy+4.dp.toPx(),labelPaint)
             }
-            selectedYear?.let { selected ->
-                val x=left+((selected-low)/span)*contentWidth-pan
+            selectedValue?.let { selected ->
+                val x=left+(((selected-low)/span).toFloat())*contentWidth-pan
                 if(x>=left && x<=size.width-right) {
                     drawLine(Color(0xFF23364D).copy(alpha=.85f),androidx.compose.ui.geometry.Offset(x,axisY),androidx.compose.ui.geometry.Offset(x,size.height),strokeWidth=1.5.dp.toPx())
                     drawCircle(Color.White,5.dp.toPx(),androidx.compose.ui.geometry.Offset(x,axisY+2.dp.toPx()))
-                    val text=year(selected)
+                    val text=axisDate(selected,visibleSpan)
                     val p=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color=android.graphics.Color.WHITE; textSize=11.sp.toPx(); textAlign=android.graphics.Paint.Align.CENTER; typeface=android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL) }
                     val cx=x.coerceIn(34.dp.toPx(),size.width-34.dp.toPx())
                     drawContext.canvas.nativeCanvas.drawRoundRect(cx-32.dp.toPx(),2.dp.toPx(),cx+32.dp.toPx(),20.dp.toPx(),8.dp.toPx(),8.dp.toPx(),android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color=android.graphics.Color.rgb(35,54,77) })
