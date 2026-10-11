@@ -308,23 +308,52 @@ class MainActivity:ComponentActivity() {
         Canvas(
             Modifier.fillMaxWidth().height(totalHeight).clip(RoundedCornerShape(14.dp))
                 .background(Color.White)
-                .pointerInput(entries,zoom,panFraction) {
+                .pointerInput(entries) {
                     awaitEachGesture {
                         awaitFirstDown(requireUnconsumed=false)
-                        var pressed=true
-                        while(pressed) {
+                        var previousCentroidX:Float? = null
+                        var previousSpan:Float? = null
+                        do {
                             val event=awaitPointerEvent()
-                            val change=event.changes.firstOrNull() ?: break
-                            val left=88.dp.toPx()
-                            val right=12.dp.toPx()
-                            val plot=(size.width-left-right).coerceAtLeast(1f)
-                            val maxPan=plot*(zoom-1f)
-                            val pan=maxPan*panFraction
-                            val ratio=((change.position.x-left+pan)/(plot*zoom)).coerceIn(0f,1f)
-                            selectedYear=(low+span*ratio).toInt()
-                            change.consume()
-                            pressed=event.changes.any { it.pressed }
-                        }
+                            val pressed=event.changes.filter { it.pressed }
+                            if(pressed.size>=2) {
+                                val cx=pressed.map { it.position.x }.average().toFloat()
+                                val cy=pressed.map { it.position.y }.average().toFloat()
+                                val spanNow=(pressed.map { change ->
+                                    val dx=change.position.x-cx
+                                    val dy=change.position.y-cy
+                                    kotlin.math.sqrt(dx*dx+dy*dy)
+                                }.average().toFloat()*2f).coerceAtLeast(1f)
+                                val oldSpan=previousSpan
+                                if(oldSpan!=null && previousCentroidX!=null) {
+                                    val left=88.dp.toPx()
+                                    val plot=(size.width-left-12.dp.toPx()).coerceAtLeast(1f)
+                                    val oldZoom=zoom
+                                    val newZoom=(oldZoom*(spanNow/oldSpan)).coerceIn(1f,64f)
+                                    val oldPan=plot*(oldZoom-1f)*panFraction
+                                    val anchor=((previousCentroidX!!-left+oldPan)/oldZoom).coerceIn(0f,plot)
+                                    val newPan=(anchor*newZoom-(cx-left)).coerceIn(0f,plot*(newZoom-1f))
+                                    zoom=newZoom
+                                    panFraction=if(newZoom<=1f) 0f else (newPan/(plot*(newZoom-1f))).coerceIn(0f,1f)
+                                }
+                                previousSpan=spanNow
+                                previousCentroidX=cx
+                                pressed.forEach { it.consume() }
+                            } else if(pressed.size==1) {
+                                previousSpan=null
+                                previousCentroidX=null
+                                val left=88.dp.toPx()
+                                val plot=(size.width-left-12.dp.toPx()).coerceAtLeast(1f)
+                                val maxPan=plot*(zoom-1f)
+                                val pan=maxPan*panFraction
+                                val ratio=((pressed[0].position.x-left+pan)/(plot*zoom)).coerceIn(0f,1f)
+                                selectedYear=(low+span*ratio).toInt()
+                                pressed[0].consume()
+                            } else {
+                                previousSpan=null
+                                previousCentroidX=null
+                            }
+                        } while(event.changes.any { it.pressed })
                     }
                 }
         ) {
@@ -399,58 +428,134 @@ class MainActivity:ComponentActivity() {
     }}
 }
 private object Wiki {
-    private fun json(url:String):JSONObject { val c=URL(url).openConnection() as HttpURLConnection;c.connectTimeout=12000;c.readTimeout=12000;c.setRequestProperty("User-Agent","WikiGraphAndroid/0.1");return try{JSONObject(c.inputStream.bufferedReader().use{it.readText()})}finally{c.disconnect()} }
-    fun search(q:String):List<Entry> { val s=URLEncoder.encode(q,"UTF-8");val a=json("https://ru.wikipedia.org/w/api.php?action=query&list=search&srsearch="+s+"&srnamespace=0&srlimit=12&format=json&utf8=1").getJSONObject("query").getJSONArray("search");return (0 until a.length()).map{i->val o=a.getJSONObject(i);val title=o.getString("title");Entry(title,android.text.Html.fromHtml(o.optString("snippet").replace(Regex("<.*?>"),""),android.text.Html.FROM_HTML_MODE_COMPACT).toString(),o.getInt("pageid"),url="https://ru.wikipedia.org/wiki/"+URLEncoder.encode(title.replace(' ','_'),"UTF-8").replace("+","%20"))} }
-    fun enrich(e:Entry):Entry { val q=URLEncoder.encode(e.title,"UTF-8");val pages=json("https://ru.wikipedia.org/w/api.php?action=query&prop=pageprops&ppprop=wikibase_item&titles="+q+"&format=json").getJSONObject("query").getJSONObject("pages");val key=pages.keys().asSequence().firstOrNull()?:return e;val wd=pages.getJSONObject(key).optJSONObject("pageprops")?.optString("wikibase_item").orEmpty();if(wd.isBlank()||wd=="null")return e;val entity=json("https://www.wikidata.org/wiki/Special:EntityData/"+wd+".json").getJSONObject("entities").getJSONObject(wd);val claims=entity.optJSONObject("claims")?:return e.copy(wd=wd)
-        fun years(p:String):List<Int> {
-            val a=claims.optJSONArray(p)?:return emptyList()
-            return (0 until a.length()).mapNotNull { i ->
-                val value=a.getJSONObject(i).optJSONObject("mainsnak")?.optJSONObject("datavalue")?.optJSONObject("value")?.optString("time") ?: return@mapNotNull null
-                Regex("^([+-]?\\d{1,16})").find(value)?.groupValues?.get(1)?.toIntOrNull()
-            }.distinct()
+    private fun json(url:String):JSONObject {
+        val c=URL(url).openConnection() as HttpURLConnection
+        c.connectTimeout=20000
+        c.readTimeout=30000
+        c.setRequestProperty("User-Agent","WikiGraphAndroid/0.2 (historical timeline)")
+        return try { JSONObject(c.inputStream.bufferedReader().use { it.readText() }) } finally { c.disconnect() }
+    }
+
+    fun search(q:String):List<Entry> {
+        val s=URLEncoder.encode(q,"UTF-8")
+        val a=json("https://ru.wikipedia.org/w/api.php?action=query&list=search&srsearch="+s+"&srnamespace=0&srlimit=12&format=json&utf8=1")
+            .getJSONObject("query").getJSONArray("search")
+        return (0 until a.length()).map { i ->
+            val o=a.getJSONObject(i)
+            val title=o.getString("title")
+            Entry(title,android.text.Html.fromHtml(o.optString("snippet").replace(Regex("<.*?>"),""),android.text.Html.FROM_HTML_MODE_COMPACT).toString(),o.getInt("pageid"),
+                url="https://ru.wikipedia.org/wiki/"+URLEncoder.encode(title.replace(' ','_'),"UTF-8").replace("+","%20"))
         }
-        fun yr(p:String)=years(p).firstOrNull()
-        val birth=yr("P569"); val death=yr("P570")
-        val start=yr("P580")?:yr("P571")?:yr("P585")?:birth
-        val end=yr("P582")?:yr("P576")?:death
+    }
+
+    private fun articleDateOptions(text:String):List<DateOption> {
+        val result=mutableListOf<DateOption>()
+        val normalized=text.replace('\u00a0',' ').replace('\u2212','-')
+        val bc="(?:до\\s*н\\.?\\s*э\\.?|до\\s+нашей\\s+эры)"
+        val rangeRegex=Regex("(?<!\\d)(\\d{1,4})\\s*(?:гг?\\.?|года|год|—|–|-)\\s*(\\d{1,4})(\\s*$bc)?",RegexOption.IGNORE_CASE)
+        val covered=mutableSetOf<IntRange>()
+        rangeRegex.findAll(normalized).forEach { m ->
+            val a=m.groupValues[1].toIntOrNull()
+            val b=m.groupValues[2].toIntOrNull()
+            if(a!=null && b!=null && a in 1..9999 && b in 1..9999) {
+                val isBc=m.groupValues[3].isNotBlank()
+                val start=if(isBc) -a else a
+                val end=if(isBc) -b else b
+                val context=normalized.substring((m.range.first-52).coerceAtLeast(0),(m.range.last+53).coerceAtMost(normalized.length))
+                    .replace(Regex("\\s+")," ").trim().take(100)
+                result.add(DateOption("Из статьи: $context",start,end))
+                covered.add(m.range)
+            }
+        }
+        val yearRegex=Regex("(?<!\\d)(\\d{1,4})(?:\\s*(года|год|г\\.?))?(\\s*$bc)?",RegexOption.IGNORE_CASE)
+        yearRegex.findAll(normalized).forEach { m ->
+            if(covered.any { it.first<=m.range.first && it.last>=m.range.last }) return@forEach
+            val value=m.groupValues[1].toIntOrNull() ?: return@forEach
+            if(value !in 1..9999) return@forEach
+            val before=normalized.substring((m.range.first-16).coerceAtLeast(0),m.range.first)
+            val after=normalized.substring(m.range.last+1,(m.range.last+28).coerceAtMost(normalized.length))
+            val hasDateMarker=m.groupValues[2].isNotBlank() || m.groupValues[3].isNotBlank() ||
+                Regex("\\b(?:в|с|к|около|примерно|начало|конец|середина|июня|июля|августа|сентября|октября|ноября|декабря|января|февраля|марта|апреля|мая)\\s*$",RegexOption.IGNORE_CASE).containsMatchIn(before) ||
+                Regex("^\\s*(?:году|года|г\\.|до\\s)",RegexOption.IGNORE_CASE).containsMatchIn(after)
+            if(value<100 && !hasDateMarker) return@forEach
+            val isBc=m.groupValues[3].isNotBlank()
+            val year=if(isBc) -value else value
+            val context=normalized.substring((m.range.first-48).coerceAtLeast(0),(m.range.last+49).coerceAtMost(normalized.length))
+                .replace(Regex("\\s+")," ").trim().take(94)
+            result.add(DateOption("Из статьи: $context",year,null))
+        }
+        return result.distinctBy { Triple(it.label,it.start,it.end) }
+    }
+
+    fun enrich(e:Entry):Entry {
+        val q=URLEncoder.encode(e.title,"UTF-8")
+        val pageData=runCatching {
+            val response=json("https://ru.wikipedia.org/w/api.php?action=query&prop=pageprops%7Cextracts&ppprop=wikibase_item&explaintext=1&titles="+q+"&format=json")
+            val pages=response.getJSONObject("query").getJSONObject("pages")
+            val key=pages.keys().asSequence().firstOrNull()
+            if(key==null) null else pages.getJSONObject(key)
+        }.getOrNull()
+        val articleText=pageData?.optString("extract").orEmpty()
+        val wd=pageData?.optJSONObject("pageprops")?.optString("wikibase_item").orEmpty().let { if(it=="null") "" else it }
         val options=mutableListOf<DateOption>()
-        fun addOptions(property:String,label:String) { years(property).forEachIndexed { i,y -> options.add(DateOption(if(years(property).size>1) "$label · ${i+1}" else label,y,null)) } }
-        val starts=years("P580"); val ends=years("P582")
-        if(starts.isNotEmpty()) starts.forEachIndexed { i,y -> options.add(DateOption("Начало периода ${i+1}",y,ends.getOrNull(i) ?: ends.firstOrNull())) }
-        val inceptions=years("P571"); val dissolved=years("P576")
-        if(inceptions.isNotEmpty()) inceptions.forEachIndexed { i,y -> options.add(DateOption("Основание / существование ${i+1}",y,dissolved.getOrNull(i) ?: dissolved.firstOrNull())) }
-        addOptions("P569","Рождение"); addOptions("P570","Смерть"); addOptions("P585","Дата события"); addOptions("P576","Прекращение")
-        if(start!=null && options.none { it.start==start && it.end==end }) options.add(0,DateOption("Основной период",start,end))
-        val articleText=runCatching {
-            val article=json("https://ru.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&exchars=8000&titles="+q+"&format=json")
-            val articlePages=article.getJSONObject("query").getJSONObject("pages")
-            articlePages.getJSONObject(articlePages.keys().asSequence().first()).optString("extract")
-        }.getOrDefault("")
-        val rangeRegex=Regex("(?<!\\d)(\\d{3,4})\\s*[–—-]\\s*(\\d{3,4})(?!\\d)")
-        val ranges=rangeRegex.findAll(articleText).take(12).toList()
-        ranges.forEach { match ->
-            val a=match.groupValues[1].toIntOrNull(); val b=match.groupValues[2].toIntOrNull()
-            if(a!=null && b!=null && a in 100..2100 && b in 100..2100) {
-                val contextStart=(match.range.first-38).coerceAtLeast(0)
-                val contextEnd=(match.range.last+39).coerceAtMost(articleText.length)
-                val label=articleText.substring(contextStart,contextEnd).replace(Regex("\\s+")," ").trim().take(64)
-                options.add(DateOption("Из статьи: $label",a,b))
+        var birth:Int?=null
+        var death:Int?=null
+        var starts=listOf<Int>()
+        var ends=listOf<Int>()
+        var inception=listOf<Int>()
+        var dissolved=listOf<Int>()
+        if(wd.isNotBlank()) runCatching {
+            val entity=json("https://www.wikidata.org/wiki/Special:EntityData/"+wd+".json")
+                .getJSONObject("entities").getJSONObject(wd)
+            val claims=entity.optJSONObject("claims") ?: JSONObject()
+            fun years(property:String):List<Int> {
+                val a=claims.optJSONArray(property) ?: return emptyList()
+                return (0 until a.length()).mapNotNull { i ->
+                    val value=a.getJSONObject(i).optJSONObject("mainsnak")?.optJSONObject("datavalue")
+                        ?.optJSONObject("value")?.optString("time") ?: return@mapNotNull null
+                    Regex("^([+-]?\\d{1,16})").find(value)?.groupValues?.get(1)?.toIntOrNull()
+                }.distinct()
             }
+            fun addProperty(property:String,label:String) {
+                val values=years(property)
+                values.forEachIndexed { i,y ->
+                    options.add(DateOption(if(values.size>1) "$label · "+(i+1) else label,y,null))
+                }
+            }
+            birth=years("P569").firstOrNull()
+            death=years("P570").firstOrNull()
+            starts=years("P580")
+            ends=years("P582")
+            inception=years("P571")
+            dissolved=years("P576")
+            addProperty("P569","Рождение")
+            addProperty("P570","Смерть")
+            addProperty("P585","Дата события")
+            addProperty("P576","Прекращение")
+            addProperty("P580","Начало периода")
+            addProperty("P582","Окончание периода")
+            addProperty("P571","Основание / создание")
         }
-        val rangeCovered=ranges.flatMap { it.range.toList() }.toSet()
-        Regex("(?<!\\d)(\\d{3,4})(?!\\d)").findAll(articleText).take(25).forEach { match ->
-            val y=match.groupValues[1].toIntOrNull()
-            if(y!=null && y in 100..2100 && options.none { it.start==y && it.end==null }) {
-                val contextStart=(match.range.first-30).coerceAtLeast(0)
-                val contextEnd=(match.range.last+31).coerceAtMost(articleText.length)
-                val label=articleText.substring(contextStart,contextEnd).replace(Regex("\\s+")," ").trim().take(58)
-                options.add(DateOption("Из статьи: $label",y,null))
-            }
+        starts.forEachIndexed { i,y -> options.add(DateOption("Период "+(i+1),y,ends.getOrNull(i) ?: ends.firstOrNull())) }
+        inception.forEachIndexed { i,y -> options.add(DateOption("Существование "+(i+1),y,dissolved.getOrNull(i) ?: dissolved.firstOrNull())) }
+        options.addAll(articleDateOptions(articleText))
+        val primaryStart=starts.firstOrNull() ?: inception.firstOrNull() ?: birth ?: options.firstOrNull()?.start
+        val primaryEnd=ends.firstOrNull() ?: dissolved.firstOrNull() ?: death
+        if(primaryStart!=null && options.none { it.start==primaryStart && it.end==primaryEnd }) {
+            options.add(0,DateOption("Основной период",primaryStart,primaryEnd))
         }
         val uniqueOptions=options.distinctBy { Triple(it.label,it.start,it.end) }
-        val defaultIndex=uniqueOptions.indexOfFirst { it.start==start && it.end==end }.coerceAtLeast(0)
-        val kind=when { birth!=null||death!=null -> "Человек"; starts.isNotEmpty()||ends.isNotEmpty()||inceptions.isNotEmpty() -> "Событие"; else -> "Сущность" }
-        val desc=entity.optJSONObject("descriptions")?.optJSONObject("ru")?.optString("value").orEmpty().ifBlank{e.description}
-        return e.copy(description=desc,wd=wd,start=start,end=end,kind=kind,dateOptions=uniqueOptions,selectedDateOption=defaultIndex)
+        val defaultIndex=uniqueOptions.indexOfFirst { it.start==primaryStart && it.end==primaryEnd }.coerceAtLeast(0)
+        val kind=when {
+            birth!=null || death!=null -> "Человек"
+            starts.isNotEmpty() || ends.isNotEmpty() || inception.isNotEmpty() -> "Событие"
+            else -> e.kind
+        }
+        val desc=if(wd.isNotBlank()) runCatching {
+            val entity=json("https://www.wikidata.org/wiki/Special:EntityData/"+wd+".json")
+                .getJSONObject("entities").getJSONObject(wd)
+            entity.optJSONObject("descriptions")?.optJSONObject("ru")?.optString("value").orEmpty()
+        }.getOrDefault("").ifBlank { e.description } else e.description
+        return e.copy(description=desc,wd=wd,start=primaryStart,end=primaryEnd,kind=kind,dateOptions=uniqueOptions,selectedDateOption=defaultIndex)
     }
 }
