@@ -218,32 +218,91 @@ class MainActivity:ComponentActivity() {
                         }
                     }
                     item {
-                        OutlinedTextField(value=query,onValueChange={query=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("Найти статью в Википедии…")},leadingIcon={Icon(Icons.Default.Search,null)},trailingIcon={if(busy) CircularProgressIndicator(Modifier.size(22.dp),strokeWidth=2.dp) else IconButton(onClick={search()}){Icon(Icons.Default.Search,"Искать")}},singleLine=true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={search()}),shape=RoundedCornerShape(16.dp))
-                        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
-                            OutlinedTextField(value=categoryQuery,onValueChange={categoryQuery=it},modifier=Modifier.weight(1f),placeholder={Text("Категория Википедии")},singleLine=true)
-                            Spacer(Modifier.width(8.dp))
-                            OutlinedButton(onClick={loadCategories()}) { Text("Найти") }
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp)) {
+                            FilterChip(selected=searchMode=="articles",onClick={searchMode="articles"},label={Text("Поиск статей")})
+                            FilterChip(selected=searchMode=="categories",onClick={searchMode="categories"},label={Text("Каталог категорий")})
+                            FilterChip(selected=searchMode=="recommendations",onClick={searchMode="recommendations"},label={Text("Рекомендации")})
                         }
-                        if(categories.isNotEmpty()) {
-                            Text("Выберите категорию",fontSize=12.sp,color=Muted)
-                            LazyColumn(Modifier.fillMaxWidth().heightIn(max=170.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
-                                items(categories,key={ "cat-"+it.title }) { cat ->
-                                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(if(selectedCategory?.title==cat.title) Color(0xFFEAF0F8) else Color.White).clickable { selectedCategory=if(selectedCategory?.title==cat.title) null else cat; categoryQuery=cat.title }.padding(horizontal=10.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically) {
-                                        Text(if(selectedCategory?.title==cat.title) "✓ " else "",color=Blue)
-                                        Text(cat.title,Modifier.weight(1f),fontSize=13.sp,color=Ink)
-                                        Text(cat.size.toString(),fontSize=11.sp,color=Muted)
+                    }
+                    if(searchMode=="articles") {
+                        item {
+                            Text("Поиск по названию статьи. Он работает независимо от категорий и рекомендаций.",fontSize=12.sp,color=Muted)
+                            OutlinedTextField(value=query,onValueChange={query=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("Например, Ледовое побоище")},leadingIcon={Icon(Icons.Default.Search,null)},trailingIcon={if(busy) CircularProgressIndicator(Modifier.size(22.dp),strokeWidth=2.dp) else IconButton(onClick={search()}){Icon(Icons.Default.Search,"Искать")}},singleLine=true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={search()}),shape=RoundedCornerShape(16.dp))
+                            if(message.isNotBlank()) Text(message,color=Muted,fontSize=12.sp)
+                        }
+                    }
+                    if(searchMode=="categories") {
+                        item {
+                            Text("Каталог категорий — как рубрикатор: выберите тему или найдите категорию по названию.",fontSize=12.sp,color=Muted)
+                            OutlinedTextField(value=categoryQuery,onValueChange={categoryQuery=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("Название категории")},singleLine=true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={loadCategories()}) )
+                            Button(onClick={loadCategories},modifier=Modifier.fillMaxWidth(),enabled=!categoryBusy) { Text(if(categoryBusy) "Загружаем…" else "Найти категории") }
+                        }
+                        if(browseParent==null && !categoryHasSearched) {
+                            item {
+                                Text("Популярные разделы",fontSize=17.sp,fontWeight=FontWeight.Bold,color=Ink)
+                                Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                                    listOf("История","География","Биографии","Наука","Техника","Культура","Искусство","Литература","Общество","Спорт","Природа","Религия").chunked(2).forEach { pair ->
+                                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                            pair.forEach { theme -> OutlinedButton(onClick={loadCategoryTheme(theme)},modifier=Modifier.weight(1f)) { Text(theme) } }
+                                        }
                                     }
                                 }
                             }
                         }
-                        if(selectedCategory!=null) {
+                        if(browseParent!=null) item {
                             Row(verticalAlignment=Alignment.CenterVertically) {
-                                Text("Категория: "+selectedCategory!!.title,Modifier.weight(1f),fontSize=12.sp,color=Green)
-                                TextButton(onClick={selectedCategory=null}) { Text("Сбросить") }
+                                Text("Подкатегории: "+browseParent,Modifier.weight(1f),fontWeight=FontWeight.Bold,color=Ink)
+                                TextButton(onClick={browseParent=null;browseCategories=categories}) { Text("Назад") }
                             }
-                            Button(onClick={search()},modifier=Modifier.fillMaxWidth()) { Text("Показать статьи категории") }
                         }
-                        if(message.isNotBlank()) Text(message,color=Muted,fontSize=12.sp,modifier=Modifier.padding(top=6.dp))
+                        if(browseCategories.isNotEmpty()) {
+                            item { Label(if(browseParent==null) "КАТЕГОРИИ" else "ВЛОЖЕННЫЕ КАТЕГОРИИ",browseCategories.size.toString()) }
+                            items(browseCategories,key={"browse-cat-"+it.title}) { cat ->
+                                Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(12.dp)) {
+                                    Column(Modifier.fillMaxWidth().padding(10.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                                        Text(cat.title,fontWeight=FontWeight.SemiBold,color=Ink)
+                                        Text(cat.size.toString()+" страниц в категории",fontSize=11.sp,color=Muted)
+                                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                            OutlinedButton(onClick={openCategory(cat)},modifier=Modifier.weight(1f)) { Text("Подкатегории") }
+                                            Button(onClick={selectedCategory=cat;searchMode="articles";results=emptyList();message="Категория выбрана: "+cat.title},modifier=Modifier.weight(1f)) { Text("Выбрать") }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if(selectedCategory!=null) item {
+                            Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(12.dp)) {
+                                Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                                    Text("Выбрана категория: "+selectedCategory!!.title,fontWeight=FontWeight.SemiBold,color=Ink)
+                                    Button(onClick={scope.launch { busy=true; results=emptyList(); try { results=withContext(Dispatchers.IO){Wiki.searchInCategory(selectedCategory!!.title)}; if(results.isEmpty()) message="В категории нет доступных статей" } catch(e:Exception) { message="Не удалось загрузить статьи категории" } finally { busy=false } };searchMode="articles"},modifier=Modifier.fillMaxWidth()) { Text("Показать статьи этой категории") }
+                                    TextButton(onClick={selectedCategory=null}) { Text("Сбросить категорию") }
+                                }
+                            }
+                        }
+                        if(message.isNotBlank()) item { Text(message,color=Muted,fontSize=12.sp) }
+                    }
+                    if(searchMode=="articles" && results.isNotEmpty()) {
+                        item { Label("РЕЗУЛЬТАТЫ ПОИСКА",results.size.toString()) }
+                        items(results,key={ "r"+it.pageId }) { e ->
+                            Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(14.dp)) {
+                                Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
+                                    Box(Modifier.size(10.dp).clip(CircleShape).background(e.color))
+                                    Column(Modifier.weight(1f).padding(horizontal=12.dp)) {
+                                        Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink)
+                                        if(e.description.isNotBlank()) Text(e.description,color=Muted,fontSize=12.sp,maxLines=2)
+                                    }
+                                    IconButton(onClick={
+                                        if(chosen.any{it.pageId==e.pageId}) message="Уже добавлено"
+                                        else scope.launch {
+                                            busy=true; message="Загружаем даты из статьи…"
+                                            try { val full=withContext(Dispatchers.IO){Wiki.enrich(e)}; chosen.add(full); save(); recommendationSeed=full; message="Добавлено на график. Рекомендации доступны в отдельном режиме." }
+                                            catch(ex:Exception) { chosen.add(e); save(); recommendationSeed=e; message="Статья добавлена, но даты загрузить не удалось" }
+                                            finally { busy=false }
+                                        }
+                                    }) { Icon(Icons.Default.Add,"Добавить",tint=Blue) }
+                                }
+                            }
+                        }
                     }
                     if(recommendationSeed!=null) {
                         item {
