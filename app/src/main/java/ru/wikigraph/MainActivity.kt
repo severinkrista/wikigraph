@@ -150,6 +150,17 @@ class MainActivity:ComponentActivity() {
                         }
                     }
                 }
+            } else if(graphFullscreen) {
+                val visible=chosen.filter{filter=="Все"||it.kind==filter}.sortedBy{it.start?:Int.MAX_VALUE}
+                Column(Modifier.fillMaxSize()) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically) {
+                        Text("WikiGraph · ${visible.size} сущностей",Modifier.weight(1f),fontWeight=FontWeight.Bold,color=Ink)
+                        TextButton(onClick={graphOrientation=if(graphOrientation=="vertical") "horizontal" else "vertical"; (context as? ComponentActivity)?.requestedOrientation=if(graphOrientation=="horizontal") ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT}) { Text(if(graphOrientation=="vertical") "Альбомная" else "Книжная") }
+                        TextButton(onClick={graphFullscreen=false;(context as? ComponentActivity)?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED}) { Text("Закрыть") }
+                    }
+                    if(visible.isEmpty()) Text("Добавьте статьи через поиск",Modifier.padding(20.dp),color=Muted)
+                    else HistoricalGraph(visible,Modifier.fillMaxWidth().weight(1f),onSelect={detail=it},fullScreen=true)
+                }
             } else LazyColumn(Modifier.fillMaxSize().padding(pad),contentPadding=PaddingValues(16.dp,8.dp,16.dp,24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                 item { Row(verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Исторический график",fontSize=22.sp,fontWeight=FontWeight.Bold,color=Ink); Text(chosen.size.toString()+" сущностей · время по X",fontSize=12.sp,color=Muted) }; TextButton(onClick={graphFullscreen=true}){Text("На весь экран")} } }
                 item { Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp)) { listOf("Все","Человек","Событие","Эпоха","Сущность").forEach { f -> FilterChip(selected=filter==f,onClick={filter=f},label={Text(f)}) } } }
