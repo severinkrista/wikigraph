@@ -26,14 +26,19 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - name: Set up stable debug signing key
-        shell: bash
-        run: |
-          mkdir -p "$HOME/.android"
-          base64 --decode ci/debug.keystore.b64 > "$HOME/.android/debug.keystore"
-          chmod 600 "$HOME/.android/debug.keystore"
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
+      - name: Verify APK signature matches the fixed signing key
+        shell: bash
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          KEYSTORE="app/build/signing/debug.keystore"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)"
+          EXPECTED="$(keytool -list -v -keystore "$KEYSTORE" -storetype PKCS12 -storepass android -alias androiddebugkey | awk -F': ' '/SHA256:/{print $2}' | tr -d ':')"
+          ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2}' | tr -d ':')"
+          test -n "$EXPECTED"
+          test "$EXPECTED" = "$ACTUAL"
+          echo "APK signature verified against the repository's fixed signing key."
       - name: Name APK with app version
         id: apk
         shell: bash
