@@ -53,7 +53,8 @@ private val Blue = Color(0xFF557DB8)
 private val Green = Color(0xFF328A78)
 private val Amber = Color(0xFFC18A42)
 private val Muted = Color(0xFF758294)
-data class DateOption(val label:String,val start:Int?,val end:Int?)\ndata class CategoryOption(val title:String,val size:Int=0)
+data class DateOption(val label:String,val start:Int?,val end:Int?)
+data class CategoryOption(val title:String,val size:Int=0)
 data class Entry(val title:String, val description:String="", val pageId:Int=0, val wd:String="", val start:Int?=null, val end:Int?=null, val kind:String="Сущность", val url:String="https://ru.wikipedia.org", val dateOptions:List<DateOption> = emptyList(), val selectedDateOption:Int = 0) {
     val color get() = listOf(
         Color(0xFF557DB8), Color(0xFF328A78), Color(0xFFC18A42), Color(0xFF9A69B5),
