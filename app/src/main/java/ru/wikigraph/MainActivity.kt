@@ -177,7 +177,7 @@ class MainActivity:ComponentActivity() {
     var recommendationHasSearched by remember { mutableStateOf(false) }
     var recommendationSeed by remember { mutableStateOf<Entry?>(null) }; var recommendationRadius by remember { mutableIntStateOf(5) }
     var recommendations by remember { mutableStateOf(listOf<Entry>()) }; var recommendationBusy by remember { mutableStateOf(false) }
-    var screen by rememberSaveable { mutableStateOf("timeline") }; var graphFullscreen by rememberSaveable { mutableStateOf(false) }; var graphOrientation by rememberSaveable { mutableStateOf("vertical") }; var graphCompact by rememberSaveable { mutableStateOf(false) }; var showPreview by remember { mutableStateOf(false) }
+    var screen by rememberSaveable { mutableStateOf("timeline") }; var graphFullscreen by rememberSaveable { mutableStateOf(false) }; var graphOrientation by rememberSaveable { mutableStateOf("vertical") }; var graphCompact by rememberSaveable { mutableStateOf(false) }; var showPreview by remember { mutableStateOf(false) }; var showGraphControls by rememberSaveable { mutableStateOf(false) }; var pinGraphControls by rememberSaveable { mutableStateOf(false) }; var showEntityOverlay by rememberSaveable { mutableStateOf(false) }; var pinEntityOverlay by rememberSaveable { mutableStateOf(false) }
     var filter by remember { mutableStateOf("Все") }; var busy by remember { mutableStateOf(false) }
     var pulsePageId by remember { mutableIntStateOf(-1) }; var pulseTrigger by remember { mutableIntStateOf(0) }
     var message by remember { mutableStateOf("") }; var detail by remember { mutableStateOf<Entry?>(null) }
@@ -193,7 +193,7 @@ class MainActivity:ComponentActivity() {
     var dateDraftOptionIndex by remember { mutableIntStateOf(0) }; var dateDraftOptionIndices by remember { mutableStateOf(setOf<Int>()) }
     var savedScales by remember { mutableStateOf(org.json.JSONArray(prefs.getString("scales","[]"))) }
     val scope= rememberCoroutineScope()
-    fun goBack() { when { showDateOptions -> showDateOptions=false; showDateEditor -> showDateEditor=false; showScales -> showScales=false; showPreview -> showPreview=false; detail!=null -> detail=null; graphFullscreen -> { graphFullscreen=false; (context as? ComponentActivity)?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }; screen=="search" -> screen="timeline" } }
+    fun goBack() { when { showDateOptions -> showDateOptions=false; showDateEditor -> showDateEditor=false; showScales -> showScales=false; showPreview -> showPreview=false; detail!=null -> { detail=null; screen="timeline" }; graphFullscreen -> { graphFullscreen=false; (context as? ComponentActivity)?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }; screen=="search" -> screen="timeline" } }
     BackHandler(enabled=showDateOptions||showDateEditor||showScales||showHiddenEntries||showPreview||detail!=null||graphFullscreen||screen=="search") { if(showHiddenEntries) showHiddenEntries=false else goBack() }
     fun save() { prefs.edit().putString("entries",serializeEntries(chosen)).apply() }
     fun search() { if(query.isBlank()) { message="Введите название статьи для поиска"; return }; scope.launch { busy=true; results=emptyList(); message=""; try { results=withContext(Dispatchers.IO){ Wiki.search(query.trim()) }; if(results.isEmpty()) message="По этому запросу статьи не найдены" } catch(e:Exception) { message="Ошибка загрузки статей. Проверьте интернет." } finally { busy=false } } }
@@ -218,8 +218,8 @@ class MainActivity:ComponentActivity() {
                     }
                 }
             }
-        },topBar={ if(!graphFullscreen) TopAppBar(title={ Text(if(screen=="search") "Поиск статей" else "График",fontWeight=FontWeight.Bold,color=Ink) },actions={Text(chosen.size.toString(),color=Muted,modifier=Modifier.padding(end=18.dp))},colors=TopAppBarDefaults.topAppBarColors(containerColor=Color(0xFFF7F8FA))) },
-            bottomBar={ if(!graphFullscreen) NavigationBar(containerColor=Color.White) { NavigationBarItem(selected=screen=="timeline",onClick={screen="timeline"},icon={Icon(Icons.Default.Timeline,null)},label={Text("График")}); NavigationBarItem(selected=screen=="search",onClick={screen="search"},icon={Icon(Icons.Default.Search,null)},label={Text("Поиск статей")}) } }) { pad ->
+        },topBar={ if(screen!="timeline" && !graphFullscreen) TopAppBar(title={ Text(when { detail!=null -> "Карточка сущности"; screen=="manage" -> "Управление сущностями"; screen=="search" -> "Поиск сущностей"; else -> "График" },fontWeight=FontWeight.Bold,color=Ink) },navigationIcon={ IconButton(onClick={goBack()}) { Icon(Icons.Default.Timeline,"Назад") } },actions={Text(chosen.size.toString(),color=Muted,modifier=Modifier.padding(end=18.dp))},colors=TopAppBarDefaults.topAppBarColors(containerColor=Color(0xFFF7F8FA))) },
+            bottomBar={ if(!graphFullscreen) NavigationBar(containerColor=Color.White) { NavigationBarItem(selected=screen=="timeline",onClick={if(screen=="timeline"){showGraphControls=!showGraphControls;if(!showGraphControls&&!pinGraphControls) showEntityOverlay=false}else{screen="timeline"}},icon={Icon(Icons.Default.Timeline,null)},label={Text("График")}); NavigationBarItem(selected=screen=="search",onClick={screen="search";detail=null},icon={Icon(Icons.Default.Search,null)},label={Text("Поиск")}); NavigationBarItem(selected=screen=="manage",onClick={screen="manage";detail=null},icon={Icon(Icons.Default.Visibility,null)},label={Text("Сущности")}) } }) { pad ->
             if(showHiddenEntries) {
                 val hiddenEntries=chosen.filter { it.hidden }.sortedBy { it.title.lowercase(Locale.ROOT) }
                 AlertDialog(
@@ -476,6 +476,31 @@ class MainActivity:ComponentActivity() {
                         },modifier=Modifier.fillMaxWidth()){Text("Добавить на график")}
                     }
                 }
+            } else if(screen=="manage" && detail==null) {
+                val managed=chosen.sortedBy { it.title.lowercase(Locale.ROOT) }
+                if(managed.isEmpty()) Column(Modifier.fillMaxSize().padding(pad).padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
+                    Icon(Icons.Default.Timeline,null,tint=Muted,modifier=Modifier.size(42.dp))
+                    Text("Пока нет сущностей",fontWeight=FontWeight.SemiBold,color=Ink)
+                    Text("Найдите статьи и добавьте их на график.",color=Muted,fontSize=13.sp)
+                    Button(onClick={screen="search"}) { Text("Найти сущности") }
+                } else LazyColumn(Modifier.fillMaxSize().padding(pad),contentPadding=PaddingValues(horizontal=12.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                    item { Text("Управление отображением и составом графика",fontSize=12.sp,color=Muted,modifier=Modifier.padding(horizontal=4.dp,vertical=4.dp)) }
+                    items(managed,key={"manage-"+it.pageId}) { e ->
+                        Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(10.dp)) {
+                            Row(Modifier.fillMaxWidth().clickable { detail=e; screen="manage" }.padding(horizontal=8.dp,vertical=7.dp),verticalAlignment=Alignment.CenterVertically) {
+                                Box(Modifier.width(4.dp).height(34.dp).clip(RoundedCornerShape(3.dp)).background(if(e.hidden) Muted.copy(alpha=.35f) else e.color))
+                                Column(Modifier.weight(1f).padding(horizontal=9.dp)) {
+                                    Text(e.title,fontWeight=FontWeight.SemiBold,color=if(e.hidden) Muted else Ink,fontSize=14.sp,maxLines=1)
+                                    Text(e.dates+" · "+e.kind,fontSize=11.sp,color=Muted,maxLines=1)
+                                }
+                                IconButton(onClick={val i=chosen.indexOfFirst { it.pageId==e.pageId };if(i>=0)chosen[i]=e.copy(hidden=!e.hidden);save()},modifier=Modifier.size(36.dp)) {
+                                    Icon(if(e.hidden) Icons.Default.Visibility else Icons.Default.VisibilityOff,if(e.hidden) "Показать" else "Скрыть",tint=if(e.hidden) Blue else Muted)
+                                }
+                                IconButton(onClick={chosen.removeAll { it.pageId==e.pageId };if(recommendationSeed?.pageId==e.pageId)recommendationSeed=null;save()},modifier=Modifier.size(36.dp)) { Icon(Icons.Default.DeleteOutline,"Удалить",tint=Muted) }
+                            }
+                        }
+                    }
+                }
             } else if(screen=="search") {
                 LazyColumn(Modifier.fillMaxSize().padding(pad),contentPadding=PaddingValues(16.dp,8.dp,16.dp,24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                     item {
@@ -692,56 +717,54 @@ class MainActivity:ComponentActivity() {
                         }
                     }
                 }
-            } else if(graphFullscreen) {
-                val visible=chosen.filter{!it.hidden}.sortedBy{it.start?:Int.MAX_VALUE}
-                Column(Modifier.fillMaxSize()) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically) {
-                        Text("${visible.size} сущностей",Modifier.weight(1f),fontWeight=FontWeight.Bold,color=Ink)
-                        TextButton(onClick={graphCompact=!graphCompact}) { Text(if(graphCompact) "Обычный вид" else "Компактно") }
-                        TextButton(onClick={graphOrientation=if(graphOrientation=="vertical") "horizontal" else "vertical"; (context as? ComponentActivity)?.requestedOrientation=if(graphOrientation=="horizontal") ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT}) { Text(if(graphOrientation=="vertical") "Альбомная" else "Книжная") }
-                        TextButton(onClick={graphFullscreen=false;(context as? ComponentActivity)?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED}) { Text("Закрыть") }
+            } else {
+                val visible=chosen.filter { !it.hidden }.sortedBy { it.start?:Int.MAX_VALUE }
+                Box(Modifier.fillMaxSize().padding(pad)) {
+                    if(visible.isEmpty()) Column(Modifier.align(Alignment.Center).padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.Timeline,null,tint=Muted,modifier=Modifier.size(42.dp))
+                        Text("Временная шкала пока пуста",color=Ink,fontWeight=FontWeight.SemiBold)
+                        Text("Откройте поиск и добавьте нужные статьи",fontSize=12.sp,color=Muted)
+                        Button(onClick={screen="search"}) { Text("Найти сущности") }
+                    } else Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                        HistoricalGraph(visible,Modifier.fillMaxWidth(),onSelect={detail=it;screen="manage"},fullScreen=true,compact=graphCompact,pulsePageId=pulsePageId,pulseTrigger=pulseTrigger)
                     }
-                    if(visible.isEmpty()) Text("Добавьте статьи через поиск",Modifier.padding(20.dp),color=Muted)
-                    else Box(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
-                        HistoricalGraph(visible,Modifier.fillMaxWidth(),onSelect={detail=it},fullScreen=true,compact=graphCompact,pulsePageId=pulsePageId,pulseTrigger=pulseTrigger)
+                    if(showGraphControls || pinGraphControls) {
+                        Card(Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(horizontal=8.dp,vertical=6.dp),colors=CardDefaults.cardColors(containerColor=Color.White.copy(alpha=.97f)),elevation=CardDefaults.cardElevation(defaultElevation=6.dp),shape=RoundedCornerShape(14.dp)) {
+                            Column(Modifier.padding(horizontal=10.dp,vertical=6.dp)) {
+                                Row(verticalAlignment=Alignment.CenterVertically) {
+                                    Text("Параметры графика",Modifier.weight(1f),fontWeight=FontWeight.SemiBold,color=Ink,fontSize=13.sp)
+                                    IconButton(onClick={pinGraphControls=!pinGraphControls},modifier=Modifier.size(34.dp)) { Icon(Icons.Default.Timeline,if(pinGraphControls) "Открепить панель" else "Закрепить панель",tint=if(pinGraphControls) Blue else Muted) }
+                                    IconButton(onClick={showGraphControls=false;if(!pinGraphControls) showEntityOverlay=false},modifier=Modifier.size(34.dp)) { Icon(Icons.Default.VisibilityOff,"Скрыть панели",tint=Muted) }
+                                }
+                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(4.dp),verticalAlignment=Alignment.CenterVertically) {
+                                    TextButton(onClick={showEntityOverlay=!showEntityOverlay}) { Text(if(showEntityOverlay) "Скрыть список" else "Список · ${chosen.size}") }
+                                    TextButton(onClick={showScales=true}) { Text("Шкалы") }
+                                    TextButton(onClick={graphCompact=!graphCompact}) { Text(if(graphCompact) "Обычный вид" else "Компактно") }
+                                    TextButton(onClick={graphOrientation=if(graphOrientation=="vertical") "horizontal" else "vertical";(context as? ComponentActivity)?.requestedOrientation=if(graphOrientation=="horizontal") ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT}) { Text(if(graphOrientation=="vertical") "Альбомная" else "Книжная") }
+                                }
+                            }
+                        }
                     }
-                }
-            } else LazyColumn(Modifier.fillMaxSize().padding(pad),contentPadding=PaddingValues(16.dp,8.dp,16.dp,24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                item { Row(verticalAlignment=Alignment.CenterVertically) {
-                    Text(chosen.size.toString()+" сущностей",Modifier.weight(1f),fontSize=13.sp,color=Muted)
-                    if(chosen.any { it.hidden }) TextButton(onClick={showHiddenEntries=true}){Text("Скрытые · "+chosen.count { it.hidden })}
-                    TextButton(onClick={showScales=true}){Text("Шкалы")}
-                    TextButton(onClick={graphCompact=!graphCompact}){Text(if(graphCompact) "Обычный вид" else "Компактно")}
-                    TextButton(onClick={graphFullscreen=true}){Text("Развернуть")}
-                } }
-                val visible=chosen.filter{!it.hidden}.sortedBy{it.start?:Int.MAX_VALUE}
-                if(visible.isEmpty()) item { Column(Modifier.fillMaxWidth().padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally) { Icon(Icons.Default.Timeline,null,tint=Muted,modifier=Modifier.size(38.dp)); Text("Временная шкала пока пуста",color=Muted); Text("Откройте «Поиск статей» и добавьте нужные статьи",fontSize=12.sp,color=Muted) } }
-                else {
-                    item { HistoricalGraph(visible,Modifier.fillMaxWidth(),onSelect={detail=it},fullScreen=false,compact=graphCompact,pulsePageId=pulsePageId,pulseTrigger=pulseTrigger) }
-                    if(graphFullscreen) item { Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End) {
-                        TextButton(onClick={graphOrientation=if(graphOrientation=="vertical") "horizontal" else "vertical"; (context as? ComponentActivity)?.requestedOrientation=if(graphOrientation=="horizontal") ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT}) { Text(if(graphOrientation=="vertical") "Альбомная ориентация" else "Книжная ориентация") }
-                        TextButton(onClick={graphFullscreen=false;(context as? ComponentActivity)?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED}) { Text("Готово") }
-                    } }
-                }
-                items(chosen.sortedBy { it.start?:Int.MAX_VALUE },key={"s"+it.pageId}) { e ->
-                        Card(Modifier.fillMaxWidth().clickable{detail=e},colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(15.dp)) {
-                            Row(Modifier.padding(if(graphCompact) 8.dp else 12.dp),verticalAlignment=Alignment.CenterVertically) {
-                                Column(Modifier.width(if(graphCompact) 62.dp else 75.dp),horizontalAlignment=Alignment.CenterHorizontally) {
-                                    Text(e.start?.let{year(it)}?:"—",fontSize=if(graphCompact) 10.sp else 11.sp,color=if(e.hidden) Muted else Ink,fontWeight=FontWeight.SemiBold)
-                                    IconButton(onClick={if(!e.hidden){pulsePageId=e.pageId;pulseTrigger++}},modifier=Modifier.size(if(graphCompact) 26.dp else 30.dp),enabled=!e.hidden) {
-                                        Box(Modifier.width(4.dp).height(if(graphCompact) 14.dp else 22.dp).clip(RoundedCornerShape(3.dp)).background(if(e.hidden) Muted.copy(alpha=.35f) else e.color))
+                    if(showEntityOverlay || pinEntityOverlay) {
+                        Card(Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(.30f).padding(horizontal=8.dp,vertical=6.dp),colors=CardDefaults.cardColors(containerColor=Color.White.copy(alpha=.97f)),elevation=CardDefaults.cardElevation(defaultElevation=8.dp),shape=RoundedCornerShape(14.dp)) {
+                            Column(Modifier.fillMaxSize().padding(horizontal=8.dp,vertical=4.dp)) {
+                                Row(verticalAlignment=Alignment.CenterVertically) {
+                                    Text("Сущности · ${chosen.size}",Modifier.weight(1f),fontWeight=FontWeight.SemiBold,color=Ink,fontSize=13.sp)
+                                    IconButton(onClick={pinEntityOverlay=!pinEntityOverlay},modifier=Modifier.size(32.dp)) { Icon(Icons.Default.Timeline,if(pinEntityOverlay) "Открепить список" else "Закрепить список",tint=if(pinEntityOverlay) Blue else Muted) }
+                                    IconButton(onClick={showEntityOverlay=false},modifier=Modifier.size(32.dp)) { Icon(Icons.Default.VisibilityOff,"Скрыть список",tint=Muted) }
+                                }
+                                LazyColumn(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(2.dp)) {
+                                    items(chosen.sortedBy { it.start?:Int.MAX_VALUE },key={"overlay-"+it.pageId}) { e ->
+                                        Row(Modifier.fillMaxWidth().clickable { detail=e;screen="manage" }.padding(vertical=3.dp,horizontal=3.dp),verticalAlignment=Alignment.CenterVertically) {
+                                            Box(Modifier.width(4.dp).height(25.dp).clip(RoundedCornerShape(2.dp)).background(if(e.hidden) Muted.copy(alpha=.35f) else e.color))
+                                            Column(Modifier.weight(1f).padding(horizontal=8.dp)) {
+                                                Text(e.title,fontSize=12.sp,fontWeight=FontWeight.Medium,color=if(e.hidden) Muted else Ink,maxLines=1)
+                                                Text(e.dates,fontSize=10.sp,color=Muted,maxLines=1)
+                                            }
+                                            IconButton(onClick={val i=chosen.indexOfFirst { it.pageId==e.pageId };if(i>=0)chosen[i]=e.copy(hidden=!e.hidden);save()},modifier=Modifier.size(30.dp)) { Icon(if(e.hidden) Icons.Default.Visibility else Icons.Default.VisibilityOff,null,tint=if(e.hidden) Blue else Muted,modifier=Modifier.size(17.dp)) }
+                                        }
                                     }
-                                    if(e.end!=null&&e.end!=e.start) Text(year(e.end),fontSize=if(graphCompact) 9.sp else 10.sp,color=Muted)
                                 }
-                                Column(Modifier.weight(1f).padding(horizontal=if(graphCompact) 5.dp else 8.dp)) { Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink,fontSize=if(graphCompact) 13.sp else 14.sp,maxLines=if(graphCompact) 1 else 2); Text(e.kind+" · "+e.dates,fontSize=if(graphCompact) 10.sp else 11.sp,color=Muted,maxLines=1); if(e.description.isNotBlank()) Text(e.description,fontSize=if(graphCompact) 11.sp else 12.sp,color=Muted,maxLines=if(graphCompact) 1 else 2) }
-                                IconButton(onClick={
-                                    val i=chosen.indexOfFirst { it.pageId==e.pageId }
-                                    if(i>=0) chosen[i]=chosen[i].copy(hidden=!e.hidden)
-                                    save()
-                                },modifier=Modifier.size(if(graphCompact) 30.dp else 36.dp)) {
-                                    Icon(if(e.hidden) Icons.Default.Visibility else Icons.Default.VisibilityOff,if(e.hidden) "Показать на графике" else "Скрыть с графика",tint=if(e.hidden) Blue else Muted)
-                                }
-                                IconButton(onClick={chosen.remove(e);save()},modifier=Modifier.size(if(graphCompact) 28.dp else 32.dp)){Icon(Icons.Default.DeleteOutline,"Убрать",tint=Muted)}
                             }
                         }
                     }
