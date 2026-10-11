@@ -28,6 +28,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -61,17 +63,29 @@ private val Amber = Color(0xFFC18A42)
 private val Muted = Color(0xFF758294)
 data class DateOption(val label:String,val start:Int?,val end:Int?,val startDate:String?=null,val endDate:String?=null,val precision:String="year")
 data class CategoryOption(val title:String,val size:Int=0)
-data class Entry(val title:String, val description:String="", val pageId:Int=0, val wd:String="", val start:Int?=null, val end:Int?=null, val kind:String="Сущность", val url:String="https://ru.wikipedia.org", val dateOptions:List<DateOption> = emptyList(), val selectedDateOption:Int = 0, val hidden:Boolean=false, val categories:List<String> = emptyList(), val startDate:String?=null, val endDate:String?=null, val datePrecision:String="year") {
+data class Entry(val title:String, val description:String="", val pageId:Int=0, val wd:String="", val start:Int?=null, val end:Int?=null, val kind:String="Сущность", val url:String="https://ru.wikipedia.org", val dateOptions:List<DateOption> = emptyList(), val selectedDateOption:Int = 0, val hidden:Boolean=false, val categories:List<String> = emptyList(), val startDate:String?=null, val endDate:String?=null, val datePrecision:String="year", val selectedDateOptions:List<Int> = emptyList()) {
     val color get() = listOf(
         Color(0xFF557DB8), Color(0xFF328A78), Color(0xFFC18A42), Color(0xFF9A69B5),
         Color(0xFFD45D79), Color(0xFF458FBD), Color(0xFF7A9D38), Color(0xFFCC7045),
         Color(0xFF5B6BBF), Color(0xFF299D91), Color(0xFFB85C9E), Color(0xFF8A7658)
     )[Math.floorMod(pageId, 12)]
-    val dates get() = if(start==null && startDate==null) "Даты не найдены" else {
+    val dates get() = if(selectedDateOptions.isNotEmpty()) {
+        val values=selectedDateOptions.mapNotNull { dateOptions.getOrNull(it) }.map { option ->
+            val first=option.startDate?.let { displayDate(it) } ?: option.start?.let { year(it) } ?: "?"
+            val last=option.endDate?.let { displayDate(it) } ?: option.end?.let { year(it) }
+            if(last!=null && (option.end!=option.start || option.endDate!=null)) "$first — $last" else first
+        }.distinct()
+        if(values.isEmpty()) "Даты не найдены" else values.take(2).joinToString("; ")+(if(values.size>2) " и ещё ${values.size-2}" else "")
+    } else if(start==null && startDate==null) "Даты не найдены" else {
         val first=startDate?.let { displayDate(it) } ?: start?.let { year(it) } ?: "?"
         val last=endDate?.let { displayDate(it) } ?: end?.let { year(it) }
         if(last!=null && (end!=start || endDate!=null)) "$first — $last" else first
     }
+}
+private fun plottedEntries(e:Entry):List<Entry> {
+    val selected=if(e.selectedDateOptions.isNotEmpty()) e.selectedDateOptions.distinct().mapNotNull { e.dateOptions.getOrNull(it) } else listOfNotNull(e.dateOptions.getOrNull(e.selectedDateOption))
+    if(selected.isEmpty()) return listOf(e)
+    return selected.map { option -> e.copy(start=option.start,end=option.end,startDate=option.startDate,endDate=option.endDate,datePrecision=option.precision,selectedDateOption=e.dateOptions.indexOf(option),selectedDateOptions=emptyList()) }
 }
 private fun displayDate(value:String):String = runCatching {
     when(value.length) { 4 -> value; 7 -> YearMonth.parse(value).format(DateTimeFormatter.ofPattern("MM.yyyy")); else -> LocalDate.parse(value).format(DateTimeFormatter.ofPattern("dd.MM.yyyy")) }
@@ -123,7 +137,7 @@ private fun serializeEntries(entries:List<Entry>):String {
     entries.forEach { e -> a.put(JSONObject().apply {
         put("title",e.title); put("description",e.description); put("pageId",e.pageId); put("wd",e.wd)
         put("start",e.start?:JSONObject.NULL); put("end",e.end?:JSONObject.NULL); put("startDate",e.startDate?:JSONObject.NULL); put("endDate",e.endDate?:JSONObject.NULL); put("datePrecision",e.datePrecision); put("kind",e.kind); put("url",e.url)
-        put("selectedDateOption",e.selectedDateOption); put("hidden",e.hidden)
+        put("selectedDateOption",e.selectedDateOption); val selectedOptions=org.json.JSONArray(); e.selectedDateOptions.forEach { selectedOptions.put(it) }; put("selectedDateOptions",selectedOptions); put("hidden",e.hidden)
         val categoryArray=org.json.JSONArray(); e.categories.forEach { categoryArray.put(it) }; put("categories",categoryArray)
         val opts=org.json.JSONArray(); e.dateOptions.forEach { d -> opts.put(JSONObject().apply { put("label",d.label); put("start",d.start?:JSONObject.NULL); put("end",d.end?:JSONObject.NULL); put("startDate",d.startDate?:JSONObject.NULL); put("endDate",d.endDate?:JSONObject.NULL); put("precision",d.precision) }) }; put("dateOptions",opts)
     }) }
@@ -138,7 +152,7 @@ private fun parseEntries(raw:String):List<Entry> = runCatching {
         val legacyEnd=if(o.isNull("end")) null else o.optInt("end")
         val storedStartDate=if(o.isNull("startDate")) legacyStart?.toString() else o.optString("startDate")
         val storedEndDate=if(o.isNull("endDate")) legacyEnd?.toString() else o.optString("endDate")
-        Entry(o.optString("title"),o.optString("description"),o.optInt("pageId"),o.optString("wd"),legacyStart,legacyEnd,o.optString("kind","Сущность"),o.optString("url"),dates,o.optInt("selectedDateOption",0),o.optBoolean("hidden",false),(o.optJSONArray("categories")?:org.json.JSONArray()).let { a -> (0 until a.length()).map { a.optString(it) } },storedStartDate,storedEndDate,o.optString("datePrecision","year"))
+        Entry(o.optString("title"),o.optString("description"),o.optInt("pageId"),o.optString("wd"),legacyStart,legacyEnd,o.optString("kind","Сущность"),o.optString("url"),dates,o.optInt("selectedDateOption",0),o.optBoolean("hidden",false),(o.optJSONArray("categories")?:org.json.JSONArray()).let { a -> (0 until a.length()).map { a.optString(it) } },storedStartDate,storedEndDate,o.optString("datePrecision","year"),(o.optJSONArray("selectedDateOptions")?:org.json.JSONArray()).let { a -> (0 until a.length()).map { a.optInt(it) }.filter { it in dates.indices } })
     }
 }.getOrDefault(emptyList())
 private fun year(y:Int)= if(y<0) (-y).toString()+" до н. э." else if(y==0) "ок. 1 до н. э." else y.toString()
@@ -175,7 +189,7 @@ class MainActivity:ComponentActivity() {
     var draftEndDate by remember { mutableStateOf("") }
     var dateOptionQuery by remember { mutableStateOf("") }
     var dateOptionFilter by remember { mutableStateOf("Все") }
-    var dateDraftOptionIndex by remember { mutableIntStateOf(0) }
+    var dateDraftOptionIndex by remember { mutableIntStateOf(0) }; var dateDraftOptionIndices by remember { mutableStateOf(setOf<Int>()) }
     var savedScales by remember { mutableStateOf(org.json.JSONArray(prefs.getString("scales","[]"))) }
     val scope= rememberCoroutineScope()
     fun goBack() { when { showDateOptions -> showDateOptions=false; showDateEditor -> showDateEditor=false; showScales -> showScales=false; showPreview -> showPreview=false; detail!=null -> detail=null; graphFullscreen -> { graphFullscreen=false; (context as? ComponentActivity)?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }; screen=="search" -> screen="timeline" } }
@@ -310,13 +324,13 @@ class MainActivity:ComponentActivity() {
                         Spacer(Modifier.weight(1f))
                         Text("${dateOwner.dateOptions.size} вариантов",fontSize=12.sp,color=Muted)
                     }
-                    Text("Дата или диапазон",fontSize=25.sp,fontWeight=FontWeight.Bold,color=Ink)
+                    Text("Даты для графика",fontSize=25.sp,fontWeight=FontWeight.Bold,color=Ink)
                     Text(dateOwner.title,fontSize=15.sp,color=Muted,maxLines=2)
                     Card(Modifier.fillMaxWidth().padding(top=12.dp,bottom=10.dp),colors=CardDefaults.cardColors(containerColor=Color(0xFFEAF0F8))) {
                         Column(Modifier.fillMaxWidth().padding(14.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
                             Text("Сейчас выбрано",fontSize=11.sp,color=Muted,fontWeight=FontWeight.SemiBold)
                             Text(dateOwner.dates,fontSize=21.sp,color=Ink,fontWeight=FontWeight.Bold)
-                            Text("Выберите найденную в статье дату или период. После применения график и карточка обновятся.",fontSize=12.sp,color=Muted)
+                            Text("Отметьте одну или несколько дат/периодов. Каждая выбранная запись будет отображаться на графике отдельной отметкой или отрезком.",fontSize=12.sp,color=Muted)
                         }
                     }
                     OutlinedTextField(value=dateOptionQuery,onValueChange={dateOptionQuery=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Найти дату или фрагмент статьи")},placeholder={Text("Например, 1812 или основание")})
@@ -334,11 +348,11 @@ class MainActivity:ComponentActivity() {
                             items(dateChoices,key={it.second}) { choice ->
                                 val option=choice.first
                                 val index=choice.second
-                                val selected=index==dateDraftOptionIndex
+                                val selected=index in dateDraftOptionIndices
                                 val isRange=option.endDate!=null || (option.start!=null && option.end!=null && option.start!=option.end)
-                                Card(Modifier.fillMaxWidth().clickable { dateDraftOptionIndex=index },colors=CardDefaults.cardColors(containerColor=if(selected) Color(0xFFEAF0F8) else Color.White),border=androidx.compose.foundation.BorderStroke(if(selected) 1.5.dp else 1.dp,if(selected) Blue else Color(0xFFE3E7ED)),shape=RoundedCornerShape(12.dp)) {
+                                Card(Modifier.fillMaxWidth().clickable { dateDraftOptionIndices=if(selected) dateDraftOptionIndices-index else dateDraftOptionIndices+index },colors=CardDefaults.cardColors(containerColor=if(selected) Color(0xFFEAF0F8) else Color.White),border=androidx.compose.foundation.BorderStroke(if(selected) 1.5.dp else 1.dp,if(selected) Blue else Color(0xFFE3E7ED)),shape=RoundedCornerShape(12.dp)) {
                                     Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.Top) {
-                                        RadioButton(selected=selected,onClick={dateDraftOptionIndex=index})
+                                        Checkbox(checked=selected,onCheckedChange={checked -> dateDraftOptionIndices=if(checked) dateDraftOptionIndices+index else dateDraftOptionIndices-index})
                                         Column(Modifier.weight(1f).padding(start=8.dp,top=5.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                             Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                                                 Text(if(option.start==null && option.startDate==null) "Дата не определена" else {
@@ -358,17 +372,18 @@ class MainActivity:ComponentActivity() {
                     Row(Modifier.fillMaxWidth().padding(top=8.dp,bottom=8.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                         OutlinedButton(onClick={showDateOptions=false},modifier=Modifier.weight(1f)){Text("Отмена")}
                         Button(onClick={
-                            val index=dateDraftOptionIndex.coerceIn(0,dateOwner.dateOptions.lastIndex.coerceAtLeast(0))
+                            val indices=dateDraftOptionIndices.filter { it in dateOwner.dateOptions.indices }.sorted()
+                            val index=indices.firstOrNull() ?: dateDraftOptionIndex.coerceIn(0,dateOwner.dateOptions.lastIndex.coerceAtLeast(0))
                             val option=dateOwner.dateOptions.getOrNull(index)
                             if(option!=null) {
-                                val updated=dateOwner.copy(start=option.start,end=option.end,startDate=option.startDate,endDate=option.endDate,datePrecision=option.precision,selectedDateOption=index)
+                                val updated=dateOwner.copy(start=option.start,end=option.end,startDate=option.startDate,endDate=option.endDate,datePrecision=option.precision,selectedDateOption=index,selectedDateOptions=indices.ifEmpty { listOf(index) })
                                 val at=chosen.indexOfFirst { it.pageId==dateOwner.pageId }
                                 if(at>=0) chosen[at]=updated
                                 detail=updated
                                 save()
                             }
                             showDateOptions=false
-                        },enabled=dateOwner.dateOptions.isNotEmpty(),modifier=Modifier.weight(1f)){Text("Применить")}
+                        },enabled=dateOwner.dateOptions.isNotEmpty() && dateDraftOptionIndices.isNotEmpty(),modifier=Modifier.weight(1f)){Text("Применить (${dateDraftOptionIndices.size})")}
                     }
                 }
             } else if(showPreview && screen=="search") {
@@ -398,7 +413,7 @@ class MainActivity:ComponentActivity() {
                     }
                     Text(precisionText,fontSize=12.sp,color=Muted)
                     OutlinedButton(onClick={draftStartDate=detail!!.startDate ?: detail!!.start?.toString().orEmpty();draftEndDate=detail!!.endDate ?: detail!!.end?.toString().orEmpty();showDateEditor=true},modifier=Modifier.fillMaxWidth()){Text("Изменить даты вручную")}
-                    if(detail!!.dateOptions.size>1) OutlinedButton(onClick={dateDraftOptionIndex=detail!!.selectedDateOption.coerceIn(0,detail!!.dateOptions.lastIndex);dateOptionQuery="";dateOptionFilter="Все";showDateOptions=true},modifier=Modifier.fillMaxWidth()){Text("Выбрать дату или диапазон · ${detail!!.dateOptions.size}")}
+                    if(detail!!.dateOptions.size>1) OutlinedButton(onClick={dateDraftOptionIndex=detail!!.selectedDateOption.coerceIn(0,detail!!.dateOptions.lastIndex);dateDraftOptionIndices=if(detail!!.selectedDateOptions.isNotEmpty()) detail!!.selectedDateOptions.toSet() else setOf(detail!!.selectedDateOption.coerceIn(0,detail!!.dateOptions.lastIndex));dateOptionQuery="";dateOptionFilter="Все";showDateOptions=true},modifier=Modifier.fillMaxWidth()){Text("Выбрать даты для графика · ${detail!!.dateOptions.size}")}
                     if(detail!!.description.isNotBlank()) {
                         val articleText=detail!!.description.trim()
                         val previewLimit=600
@@ -670,7 +685,7 @@ class MainActivity:ComponentActivity() {
                                     }
                                 }
                                 Column(Modifier.weight(1f).padding(horizontal=4.dp)) { Text(e.title,fontWeight=FontWeight.SemiBold,color=if(e.hidden) Muted else Ink); Text(e.dates+" · "+if(e.hidden) "скрыта" else "на графике",fontSize=12.sp,color=Muted) }
-                                TextButton(onClick={val i=chosen.indexOfFirst{it.pageId==e.pageId};if(i>=0)chosen[i]=e.copy(hidden=!e.hidden);save()}) { Text(if(e.hidden) "Показать" else "Скрыть") }
+                                IconButton(onClick={val i=chosen.indexOfFirst{it.pageId==e.pageId};if(i>=0)chosen[i]=e.copy(hidden=!e.hidden);save()}) { Icon(if(e.hidden) Icons.Default.Visibility else Icons.Default.VisibilityOff,if(e.hidden) "Показать на графике" else "Скрыть с графика",tint=if(e.hidden) Blue else Muted) }
                                 IconButton(onClick={chosen.remove(e);if(recommendationSeed?.pageId==e.pageId) recommendationSeed=null;save()}) { Icon(Icons.Default.DeleteOutline,"Удалить из набора",tint=Muted) }
                             }
                         }
@@ -706,19 +721,25 @@ class MainActivity:ComponentActivity() {
                         TextButton(onClick={graphOrientation=if(graphOrientation=="vertical") "horizontal" else "vertical"; (context as? ComponentActivity)?.requestedOrientation=if(graphOrientation=="horizontal") ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT}) { Text(if(graphOrientation=="vertical") "Альбомная ориентация" else "Книжная ориентация") }
                         TextButton(onClick={graphFullscreen=false;(context as? ComponentActivity)?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED}) { Text("Готово") }
                     } }
-                    items(visible,key={"s"+it.pageId}) { e ->
+                }
+                items(chosen.sortedBy { it.start?:Int.MAX_VALUE },key={"s"+it.pageId}) { e ->
                         Card(Modifier.fillMaxWidth().clickable{detail=e},colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(15.dp)) {
                             Row(Modifier.padding(if(graphCompact) 8.dp else 12.dp),verticalAlignment=Alignment.CenterVertically) {
-                                Column(Modifier.width(if(graphCompact) 62.dp else 75.dp),horizontalAlignment=Alignment.CenterHorizontally) { Text(e.start?.let{year(it)}?:"—",fontSize=if(graphCompact) 10.sp else 11.sp,color=Ink,fontWeight=FontWeight.SemiBold); Box(Modifier.padding(top=if(graphCompact) 3.dp else 6.dp).width(3.dp).height(if(graphCompact) 14.dp else 22.dp).background(e.color)) ; if(e.end!=null&&e.end!=e.start) Text(year(e.end),fontSize=if(graphCompact) 9.sp else 10.sp,color=Muted) }
+                                Column(Modifier.width(if(graphCompact) 62.dp else 75.dp),horizontalAlignment=Alignment.CenterHorizontally) {
+                                    Text(e.start?.let{year(it)}?:"—",fontSize=if(graphCompact) 10.sp else 11.sp,color=if(e.hidden) Muted else Ink,fontWeight=FontWeight.SemiBold)
+                                    IconButton(onClick={if(!e.hidden){pulsePageId=e.pageId;pulseTrigger++}},modifier=Modifier.size(if(graphCompact) 26.dp else 30.dp),enabled=!e.hidden) {
+                                        Box(Modifier.width(4.dp).height(if(graphCompact) 14.dp else 22.dp).clip(RoundedCornerShape(3.dp)).background(if(e.hidden) Muted.copy(alpha=.35f) else e.color))
+                                    }
+                                    if(e.end!=null&&e.end!=e.start) Text(year(e.end),fontSize=if(graphCompact) 9.sp else 10.sp,color=Muted)
+                                }
                                 Column(Modifier.weight(1f).padding(horizontal=if(graphCompact) 5.dp else 8.dp)) { Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink,fontSize=if(graphCompact) 13.sp else 14.sp,maxLines=if(graphCompact) 1 else 2); Text(e.kind+" · "+e.dates,fontSize=if(graphCompact) 10.sp else 11.sp,color=Muted,maxLines=1); if(e.description.isNotBlank()) Text(e.description,fontSize=if(graphCompact) 11.sp else 12.sp,color=Muted,maxLines=if(graphCompact) 1 else 2) }
-                                TextButton(
-                                    onClick={
-                                        val i=chosen.indexOfFirst { it.pageId==e.pageId }
-                                        if(i>=0) chosen[i]=chosen[i].copy(hidden=true)
-                                        save()
-                                    },
-                                    contentPadding=PaddingValues(horizontal=6.dp,vertical=0.dp)
-                                ) { Text("Скрыть",fontSize=if(graphCompact) 10.sp else 12.sp) }
+                                IconButton(onClick={
+                                    val i=chosen.indexOfFirst { it.pageId==e.pageId }
+                                    if(i>=0) chosen[i]=chosen[i].copy(hidden=!e.hidden)
+                                    save()
+                                },modifier=Modifier.size(if(graphCompact) 30.dp else 36.dp)) {
+                                    Icon(if(e.hidden) Icons.Default.Visibility else Icons.Default.VisibilityOff,if(e.hidden) "Показать на графике" else "Скрыть с графика",tint=if(e.hidden) Blue else Muted)
+                                }
                                 IconButton(onClick={chosen.remove(e);save()},modifier=Modifier.size(if(graphCompact) 28.dp else 32.dp)){Icon(Icons.Default.DeleteOutline,"Убрать",tint=Muted)}
                             }
                         }
@@ -736,7 +757,7 @@ class MainActivity:ComponentActivity() {
             pulseOn=false
         }
     }
-    val timelinePoints=entries.filter { it.start!=null || it.startDate!=null }.flatMap { listOf(timelineValue(it,false),timelineValue(it,true)) }.ifEmpty { listOf(0.0,36524.0) }
+    val graphEntries=entries.flatMap { plottedEntries(it) }; val timelinePoints=graphEntries.filter { it.start!=null || it.startDate!=null }.flatMap { listOf(timelineValue(it,false),timelineValue(it,true)) }.ifEmpty { listOf(0.0,36524.0) }
     val rawLow=timelinePoints.minOrNull() ?: 0.0
     val rawHigh=timelinePoints.maxOrNull() ?: 36524.0
     val rawSpan=(rawHigh-rawLow).coerceAtLeast(1.0)
@@ -863,17 +884,21 @@ class MainActivity:ComponentActivity() {
             entries.forEachIndexed { i,e ->
                 val cy=axisY+12.dp.toPx()+laneHeight.toPx()*i+laneHeight.toPx()*.5f
                 drawLine(Color(0xFFF0F2F5),androidx.compose.ui.geometry.Offset(left,cy),androidx.compose.ui.geometry.Offset(size.width-right,cy),strokeWidth=1.dp.toPx())
-                val startValue=if(e.start==null && e.startDate==null) low else timelineValue(e,false)
-                val endValue=if(e.end==null && e.endDate==null) startValue else timelineValue(e,true)
-                val x1=left+(((startValue-low)/span).toFloat())*contentWidth-pan
-                val x2=left+(((endValue-low)/span).toFloat())*contentWidth-pan
-                val pulsing=e.pageId==pulsePageId && pulseOn
-                if((e.end!=null || e.endDate!=null) && kotlin.math.abs(endValue-startValue)>0.5) {
-                    if(pulsing) drawLine(e.color.copy(alpha=.28f),androidx.compose.ui.geometry.Offset(minOf(x1,x2),cy),androidx.compose.ui.geometry.Offset(maxOf(x1,x2),cy),strokeWidth=18.dp.toPx())
-                    drawLine(e.color,androidx.compose.ui.geometry.Offset(minOf(x1,x2),cy),androidx.compose.ui.geometry.Offset(maxOf(x1,x2),cy),strokeWidth=if(pulsing) 11.dp.toPx() else 8.dp.toPx())
-                    drawCircle(e.color,if(pulsing) 6.dp.toPx() else 4.dp.toPx(),androidx.compose.ui.geometry.Offset((x1+x2)/2,cy))
+                val plotted=plottedEntries(e)
+                plotted.forEachIndexed { dateIndex,dateEntry ->
+                    val eventCy=cy+(dateIndex-(plotted.size-1)/2f).coerceIn(-3f,3f)*minOf(4.dp.toPx(),laneHeight.toPx()/maxOf(2,plotted.size+1))
+                    val startValue=if(dateEntry.start==null && dateEntry.startDate==null) low else timelineValue(dateEntry,false)
+                    val endValue=if(dateEntry.end==null && dateEntry.endDate==null) startValue else timelineValue(dateEntry,true)
+                    val x1=left+(((startValue-low)/span).toFloat())*contentWidth-pan
+                    val x2=left+(((endValue-low)/span).toFloat())*contentWidth-pan
+                    val pulsing=e.pageId==pulsePageId && pulseOn
+                    if((dateEntry.end!=null || dateEntry.endDate!=null) && kotlin.math.abs(endValue-startValue)>0.5) {
+                        if(pulsing) drawLine(e.color.copy(alpha=.28f),androidx.compose.ui.geometry.Offset(minOf(x1,x2),eventCy),androidx.compose.ui.geometry.Offset(maxOf(x1,x2),eventCy),strokeWidth=18.dp.toPx())
+                        drawLine(e.color,androidx.compose.ui.geometry.Offset(minOf(x1,x2),eventCy),androidx.compose.ui.geometry.Offset(maxOf(x1,x2),eventCy),strokeWidth=if(pulsing) 11.dp.toPx() else 5.dp.toPx())
+                        drawCircle(e.color,if(pulsing) 6.dp.toPx() else 3.dp.toPx(),androidx.compose.ui.geometry.Offset((x1+x2)/2,eventCy))
+                    }
+                    drawCircle(e.color,if(pulsing) 9.dp.toPx() else 5.dp.toPx(),androidx.compose.ui.geometry.Offset(x1,eventCy))
                 }
-                drawCircle(e.color,if(pulsing) 9.dp.toPx() else 6.dp.toPx(),androidx.compose.ui.geometry.Offset(x1,cy))
             }
             }
             entries.forEachIndexed { i,e ->
