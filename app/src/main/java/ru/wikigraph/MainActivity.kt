@@ -1,6 +1,7 @@
 package ru.wikigraph
 
 import android.os.Bundle
+import android.content.pm.ActivityInfo
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.ComponentActivity
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -66,7 +68,7 @@ class MainActivity:ComponentActivity() {
         }
     } }
     var query by remember { mutableStateOf("") }; var results by remember { mutableStateOf(listOf<Entry>()) }
-    var screen by remember { mutableStateOf("timeline") }
+    var screen by rememberSaveable { mutableStateOf("timeline") }; var graphFullscreen by rememberSaveable { mutableStateOf(false) }; var graphOrientation by rememberSaveable { mutableStateOf("vertical") }; var showPreview by remember { mutableStateOf(false) }
     var filter by remember { mutableStateOf("Все") }; var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }; var detail by remember { mutableStateOf<Entry?>(null) }
     val scope= rememberCoroutineScope()
@@ -75,7 +77,20 @@ class MainActivity:ComponentActivity() {
     MaterialTheme(colorScheme=lightColorScheme(primary=Ink,secondary=Green,background=Color(0xFFF7F8FA),surface=Color.White)) {
         Scaffold(topBar={ TopAppBar(title={Column { Text("WikiGraph",fontWeight=FontWeight.Bold,color=Ink); Text("История на одной шкале",fontSize=12.sp,color=Muted) }},actions={Text(chosen.size.toString(),color=Muted,modifier=Modifier.padding(end=18.dp))},colors=TopAppBarDefaults.topAppBarColors(containerColor=Color(0xFFF7F8FA))) },
             bottomBar={ NavigationBar(containerColor=Color.White) { NavigationBarItem(selected=screen=="timeline",onClick={screen="timeline"},icon={Icon(Icons.Default.Timeline,null)},label={Text("Шкала")}); NavigationBarItem(selected=screen=="search",onClick={screen="search"},icon={Icon(Icons.Default.Search,null)},label={Text("Поиск статей")}) } }) { pad ->
-            if(detail!=null) {
+            if(showPreview && screen=="search") {
+                AlertDialog(onDismissRequest={showPreview=false},title={Text("Добавлено на график · ${chosen.size}")},text={
+                    if(chosen.isEmpty()) Text("Пока ничего не выбрано.")
+                    else LazyColumn(Modifier.heightIn(max=420.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                        items(chosen.toList(),key={"preview-"+it.pageId}) { e ->
+                            Row(verticalAlignment=Alignment.CenterVertically) {
+                                Box(Modifier.size(10.dp).clip(CircleShape).background(e.color))
+                                Column(Modifier.weight(1f).padding(start=10.dp)) { Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink); Text(e.dates,fontSize=12.sp,color=Muted) }
+                                IconButton(onClick={chosen.remove(e);save()}) { Icon(Icons.Default.DeleteOutline,"Убрать",tint=Muted) }
+                            }
+                        }
+                    }
+                },confirmButton={TextButton(onClick={showPreview=false}){Text("Продолжить поиск")}},dismissButton={TextButton(onClick={screen="timeline";showPreview=false}){Text("Открыть график")}})
+            } else if(detail!=null) {
                 Column(Modifier.fillMaxSize().padding(pad).padding(18.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
                     Text("← Назад",Modifier.clickable { detail=null },color=Blue)
                     Text(detail!!.title,fontSize=26.sp,fontWeight=FontWeight.Bold,color=Ink)
@@ -87,6 +102,12 @@ class MainActivity:ComponentActivity() {
                 }
             } else if(screen=="search") {
                 LazyColumn(Modifier.fillMaxSize().padding(pad),contentPadding=PaddingValues(16.dp,8.dp,16.dp,24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                    item {
+                        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                            Text("Поиск сущностей",fontSize=21.sp,fontWeight=FontWeight.Bold,color=Ink,modifier=Modifier.weight(1f))
+                            OutlinedButton(onClick={showPreview=true}) { Text("На графике · ${chosen.size}") }
+                        }
+                    }
                     item {
                         OutlinedTextField(value=query,onValueChange={query=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("Найти в Википедии…")},leadingIcon={Icon(Icons.Default.Search,null)},trailingIcon={if(busy) CircularProgressIndicator(Modifier.size(22.dp),strokeWidth=2.dp) else IconButton(onClick={search()}){Icon(Icons.Default.Search,"Искать")}},singleLine=true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={search()}),shape=RoundedCornerShape(16.dp))
                         if(message.isNotBlank()) Text(message,color=Muted,fontSize=12.sp,modifier=Modifier.padding(top=6.dp))
@@ -126,12 +147,16 @@ class MainActivity:ComponentActivity() {
                     }
                 }
             } else LazyColumn(Modifier.fillMaxSize().padding(pad),contentPadding=PaddingValues(16.dp,8.dp,16.dp,24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                item { Row(verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Моя шкала",fontSize=22.sp,fontWeight=FontWeight.Bold,color=Ink); Text(chosen.size.toString()+" сущностей",fontSize=12.sp,color=Muted) }; Icon(Icons.Default.Timeline,null,tint=Blue) } }
+                item { Row(verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Исторический график",fontSize=22.sp,fontWeight=FontWeight.Bold,color=Ink); Text(chosen.size.toString()+" сущностей · время по X",fontSize=12.sp,color=Muted) }; TextButton(onClick={graphFullscreen=true}){Text("На весь экран")} } }
                 item { Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp)) { listOf("Все","Человек","Событие","Эпоха","Сущность").forEach { f -> FilterChip(selected=filter==f,onClick={filter=f},label={Text(f)}) } } }
                 val visible=chosen.filter{filter=="Все"||it.kind==filter}.sortedBy{it.start?:Int.MAX_VALUE}
                 if(visible.isEmpty()) item { Column(Modifier.fillMaxWidth().padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally) { Icon(Icons.Default.Timeline,null,tint=Muted,modifier=Modifier.size(38.dp)); Text("Временная шкала пока пуста",color=Muted); Text("Откройте «Поиск статей» и добавьте нужные статьи",fontSize=12.sp,color=Muted) } }
                 else {
-                    item { Overview(visible) }
+                    item { HistoricalGraph(visible,Modifier.fillMaxWidth(),onSelect={detail=it},fullScreen=graphFullscreen) }
+                    if(graphFullscreen) item { Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End) {
+                        TextButton(onClick={graphOrientation=if(graphOrientation=="vertical") "horizontal" else "vertical"; (context as? ComponentActivity)?.requestedOrientation=if(graphOrientation=="horizontal") ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT}) { Text(if(graphOrientation=="vertical") "Альбомная ориентация" else "Книжная ориентация") }
+                        TextButton(onClick={graphFullscreen=false;(context as? ComponentActivity)?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED}) { Text("Готово") }
+                    } }
                     items(visible,key={"s"+it.pageId}) { e ->
                         Card(Modifier.fillMaxWidth().clickable{detail=e},colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(15.dp)) {
                             Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
@@ -143,6 +168,35 @@ class MainActivity:ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+}
+@Composable private fun HistoricalGraph(entries:List<Entry>,modifier:Modifier=Modifier,onSelect:(Entry)->Unit,fullScreen:Boolean) {
+    val dates=entries.flatMap { listOfNotNull(it.start,it.end) }
+    val low=(dates.minOrNull()?:0).toFloat()
+    val high=(dates.maxOrNull()?:100).toFloat()
+    val span=(high-low).coerceAtLeast(1f)
+    val laneHeight=if(fullScreen) 76.dp else 52.dp
+    val totalHeight=(entries.size*laneHeight.value+40).dp
+    Canvas(modifier.height(totalHeight)) {
+        val left=88.dp.toPx(); val right=12.dp.toPx(); val axisY=18.dp.toPx()
+        val plotWidth=(size.width-left-right).coerceAtLeast(1f)
+        val paint=android.graphics.Paint().apply { color=android.graphics.Color.DKGRAY; textSize=10.sp.toPx(); textAlign=android.graphics.Paint.Align.CENTER }
+        for(i in 0..4) {
+            val x=left+plotWidth*i/4
+            drawLine(Muted.copy(alpha=.5f),androidx.compose.ui.geometry.Offset(x,axisY),androidx.compose.ui.geometry.Offset(x,size.height),strokeWidth=1.dp.toPx())
+            val y=(low+span*i/4).toInt()
+            drawContext.canvas.nativeCanvas.drawText(if(y<0) "${-y} до н.э." else y.toString(),x,11.dp.toPx(),paint)
+        }
+        entries.forEachIndexed { i,e ->
+            val cy=axisY+12.dp.toPx()+laneHeight.toPx()*i+laneHeight.toPx()*.5f
+            drawLine(Muted.copy(alpha=.2f),androidx.compose.ui.geometry.Offset(left,cy),androidx.compose.ui.geometry.Offset(size.width-right,cy),strokeWidth=1.dp.toPx())
+            val x1=left+(((e.start?:low.toInt()).toFloat()-low)/span).coerceIn(0f,1f)*plotWidth
+            val x2=left+(((e.end?:e.start?:low.toInt()).toFloat()-low)/span).coerceIn(0f,1f)*plotWidth
+            if(e.start!=null && e.end!=null && e.end!=e.start) drawLine(e.color,androidx.compose.ui.geometry.Offset(minOf(x1,x2),cy),androidx.compose.ui.geometry.Offset(maxOf(x1,x2),cy),strokeWidth=8.dp.toPx())
+            drawCircle(e.color,6.dp.toPx(),androidx.compose.ui.geometry.Offset(x1,cy))
+            val labelPaint=android.graphics.Paint().apply { color=android.graphics.Color.DKGRAY; textSize=10.sp.toPx() }
+            drawContext.canvas.nativeCanvas.drawText(e.title.take(13),4.dp.toPx(),cy+4.dp.toPx(),labelPaint)
         }
     }
 }
