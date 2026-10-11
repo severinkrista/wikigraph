@@ -516,7 +516,7 @@ private object Wiki {
     }
 
     fun searchInCategory(category:String):List<Entry> {
-        val title=URLEncoder.encode("Category:"+category,"UTF-8")
+        val title=URLEncoder.encode("Категория:"+category,"UTF-8")
         val pages=json("https://ru.wikipedia.org/w/api.php?action=query&generator=categorymembers&gcmtitle="+title+"&gcmtype=page&gcmnamespace=0&gcmlimit=40&prop=extracts&exintro=1&explaintext=1&exchars=240&format=json&utf8=1")
             .getJSONObject("query").optJSONObject("pages") ?: return emptyList()
         val out=mutableListOf<Entry>()
@@ -545,7 +545,7 @@ private object Wiki {
         val related=mutableListOf<Entry>()
         seedCats.take(4).forEach { cat ->
             runCatching {
-                val title=URLEncoder.encode("Category:"+cat,"UTF-8")
+                val title=URLEncoder.encode("Категория:"+cat,"UTF-8")
                 val pages=json("https://ru.wikipedia.org/w/api.php?action=query&generator=categorymembers&gcmtitle="+title+"&gcmtype=page&gcmnamespace=0&gcmlimit=15&prop=info&format=json&utf8=1").getJSONObject("query").optJSONObject("pages")
                 if(pages!=null) { val keys=pages.keys(); while(keys.hasNext()) { val p=pages.getJSONObject(keys.next()); related.add(entry(p.optString("title"),p.optInt("pageid"))) } }
             }
