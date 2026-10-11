@@ -108,6 +108,9 @@ class MainActivity:ComponentActivity() {
     var message by remember { mutableStateOf("") }; var detail by remember { mutableStateOf<Entry?>(null) }
     var showScales by remember { mutableStateOf(false) }; var scaleName by remember { mutableStateOf("") }
     var showDateOptions by remember { mutableStateOf(false) }
+    var dateOptionQuery by remember { mutableStateOf("") }
+    var dateOptionFilter by remember { mutableStateOf("Все") }
+    var dateDraftOptionIndex by remember { mutableIntStateOf(0) }
     var savedScales by remember { mutableStateOf(org.json.JSONArray(prefs.getString("scales","[]"))) }
     val scope= rememberCoroutineScope()
     fun goBack() { when { showDateOptions -> showDateOptions=false; showScales -> showScales=false; showPreview -> showPreview=false; detail!=null -> detail=null; graphFullscreen -> { graphFullscreen=false; (context as? ComponentActivity)?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }; screen=="search" -> screen="timeline" } }
@@ -168,24 +171,84 @@ class MainActivity:ComponentActivity() {
                     }
                 },confirmButton={TextButton(onClick={showScales=false}){Text("Закрыть")}})
             } else if(showDateOptions && detail!=null) {
-                AlertDialog(onDismissRequest={showDateOptions=false},title={Text("Выбрать дату для графика")},text={
-                    if(detail!!.dateOptions.isEmpty()) Text("Для этой сущности доступна только текущая дата: ${detail!!.dates}")
-                    else LazyColumn(Modifier.heightIn(max=400.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-                        items(detail!!.dateOptions) { option ->
-                            Row(Modifier.fillMaxWidth().clickable {
-                                val old=detail!!
-                                val index=old.dateOptions.indexOf(option)
-                                val updated=old.copy(start=option.start,end=option.end,selectedDateOption=index)
-                                val at=chosen.indexOfFirst { it.pageId==old.pageId }
-                                if(at>=0) chosen[at]=updated
-                                detail=updated; save(); showDateOptions=false
-                            }.padding(10.dp),verticalAlignment=Alignment.CenterVertically) {
-                                RadioButton(selected=option.start==detail!!.start && option.end==detail!!.end && detail!!.dateOptions.getOrNull(detail!!.selectedDateOption)==option,onClick=null)
-                                Column(Modifier.padding(start=8.dp)) { Text(option.label,fontWeight=FontWeight.SemiBold,color=Ink); Text(if(option.start==null) "Дата не определена" else if(option.end!=null && option.end!=option.start) "${year(option.start)} — ${year(option.end)}" else year(option.start),fontSize=12.sp,color=Muted) }
+                val dateOwner=detail!!
+                val dateChoices=dateOwner.dateOptions.mapIndexed { index, option -> option to index }
+                    .filter { (option, _) ->
+                        val matchesQuery=dateOptionQuery.isBlank() ||
+                            option.label.contains(dateOptionQuery,ignoreCase=true) ||
+                            (option.start?.let { year(it) }?.contains(dateOptionQuery,ignoreCase=true) == true) ||
+                            (option.end?.let { year(it) }?.contains(dateOptionQuery,ignoreCase=true) == true)
+                        val isRange=option.start!=null && option.end!=null && option.start!=option.end
+                        val matchesFilter=when(dateOptionFilter) {
+                            "Диапазоны" -> isRange
+                            "Одиночные даты" -> !isRange
+                            else -> true
+                        }
+                        matchesQuery && matchesFilter
+                    }
+                Column(Modifier.fillMaxSize().padding(pad).padding(horizontal=16.dp, vertical=8.dp)) {
+                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                        Text("← Назад",Modifier.clickable { showDateOptions=false }.padding(vertical=8.dp),color=Blue)
+                        Spacer(Modifier.weight(1f))
+                        Text("${dateOwner.dateOptions.size} вариантов",fontSize=12.sp,color=Muted)
+                    }
+                    Text("Дата или диапазон",fontSize=25.sp,fontWeight=FontWeight.Bold,color=Ink)
+                    Text(dateOwner.title,fontSize=15.sp,color=Muted,maxLines=2)
+                    Card(Modifier.fillMaxWidth().padding(top=12.dp,bottom=10.dp),colors=CardDefaults.cardColors(containerColor=Color(0xFFEAF0F8))) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                            Text("Сейчас выбрано",fontSize=11.sp,color=Muted,fontWeight=FontWeight.SemiBold)
+                            Text(dateOwner.dates,fontSize=21.sp,color=Ink,fontWeight=FontWeight.Bold)
+                            Text("Выберите найденную в статье дату или период. После применения график и карточка обновятся.",fontSize=12.sp,color=Muted)
+                        }
+                    }
+                    OutlinedTextField(value=dateOptionQuery,onValueChange={dateOptionQuery=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Найти дату или фрагмент статьи")},placeholder={Text("Например, 1812 или основание")})
+                    Row(Modifier.fillMaxWidth().padding(top=8.dp,bottom=8.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                        listOf("Все","Диапазоны","Одиночные даты").forEach { option ->
+                            FilterChip(selected=dateOptionFilter==option,onClick={dateOptionFilter=option},label={Text(option,fontSize=11.sp)})
+                        }
+                    }
+                    if(dateOwner.dateOptions.isEmpty()) {
+                        Text("Для этой сущности дополнительные даты не найдены.",Modifier.padding(vertical=16.dp),color=Muted)
+                    } else if(dateChoices.isEmpty()) {
+                        Text("Ничего не найдено. Измените запрос или фильтр.",Modifier.padding(vertical=16.dp),color=Muted)
+                    } else {
+                        LazyColumn(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(8.dp),contentPadding=PaddingValues(bottom=12.dp)) {
+                            items(dateChoices,key={it.second}) { choice ->
+                                val option=choice.first
+                                val index=choice.second
+                                val selected=index==dateDraftOptionIndex
+                                val isRange=option.start!=null && option.end!=null && option.start!=option.end
+                                Card(Modifier.fillMaxWidth().clickable { dateDraftOptionIndex=index },colors=CardDefaults.cardColors(containerColor=if(selected) Color(0xFFEAF0F8) else Color.White),border=androidx.compose.foundation.BorderStroke(if(selected) 1.5.dp else 1.dp,if(selected) Blue else Color(0xFFE3E7ED)),shape=RoundedCornerShape(12.dp)) {
+                                    Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.Top) {
+                                        RadioButton(selected=selected,onClick={dateDraftOptionIndex=index})
+                                        Column(Modifier.weight(1f).padding(start=8.dp,top=5.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                                            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                                                Text(if(option.start==null) "Дата не определена" else if(isRange) "${year(option.start)} — ${year(option.end!!)}" else year(option.start),fontWeight=FontWeight.Bold,fontSize=16.sp,color=Ink)
+                                                if(isRange) Surface(color=Green.copy(alpha=.12f),shape=RoundedCornerShape(6.dp)) { Text("ПЕРИОД",Modifier.padding(horizontal=6.dp,vertical=3.dp),fontSize=9.sp,color=Green,fontWeight=FontWeight.Bold) }
+                                            }
+                                            Text(option.label,fontSize=12.sp,color=Muted)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
-                },confirmButton={TextButton(onClick={showDateOptions=false}){Text("Готово")}})
+                    Row(Modifier.fillMaxWidth().padding(top=8.dp,bottom=8.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                        OutlinedButton(onClick={showDateOptions=false},modifier=Modifier.weight(1f)){Text("Отмена")}
+                        Button(onClick={
+                            val index=dateDraftOptionIndex.coerceIn(0,dateOwner.dateOptions.lastIndex.coerceAtLeast(0))
+                            val option=dateOwner.dateOptions.getOrNull(index)
+                            if(option!=null) {
+                                val updated=dateOwner.copy(start=option.start,end=option.end,selectedDateOption=index)
+                                val at=chosen.indexOfFirst { it.pageId==dateOwner.pageId }
+                                if(at>=0) chosen[at]=updated
+                                detail=updated
+                                save()
+                            }
+                            showDateOptions=false
+                        },enabled=dateOwner.dateOptions.isNotEmpty(),modifier=Modifier.weight(1f)){Text("Применить")}
+                    }
+                }
             } else if(showPreview && screen=="search") {
                 AlertDialog(onDismissRequest={showPreview=false},title={Text("Добавлено на график · ${chosen.size}")},text={
                     if(chosen.isEmpty()) Text("Пока ничего не выбрано.")
@@ -205,7 +268,7 @@ class MainActivity:ComponentActivity() {
                     Text(detail!!.title,fontSize=26.sp,fontWeight=FontWeight.Bold,color=Ink)
                     Text(detail!!.kind.uppercase(Locale.getDefault()),color=detail!!.color)
                     Text(detail!!.dates,fontSize=22.sp,fontWeight=FontWeight.SemiBold)
-                    if(detail!!.dateOptions.size>1) OutlinedButton(onClick={showDateOptions=true},modifier=Modifier.fillMaxWidth()){Text("Выбрать дату · ${detail!!.dateOptions.size} вариантов")}
+                    if(detail!!.dateOptions.size>1) OutlinedButton(onClick={dateDraftOptionIndex=detail!!.selectedDateOption.coerceIn(0,detail!!.dateOptions.lastIndex);dateOptionQuery="";dateOptionFilter="Все";showDateOptions=true},modifier=Modifier.fillMaxWidth()){Text("Выбрать дату или диапазон · ${detail!!.dateOptions.size}")}
                     Text(detail!!.description,color=Muted)
                     Button(onClick={runCatching { context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(detail!!.url))) }},modifier=Modifier.fillMaxWidth()){Text("Открыть статью в Википедии")}
                     if(chosen.any { it.pageId==detail!!.pageId }) {
