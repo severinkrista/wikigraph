@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -199,7 +200,7 @@ class MainActivity:ComponentActivity() {
                     }
                 },confirmButton={TextButton(onClick={showPreview=false}){Text("Продолжить поиск")}},dismissButton={TextButton(onClick={screen="timeline";showPreview=false}){Text("Открыть график")}})
             } else if(detail!=null) {
-                Column(Modifier.fillMaxSize().padding(pad).padding(18.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
+                Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(18.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
                     Text("← Назад",Modifier.clickable { detail=null },color=Blue)
                     Text(detail!!.title,fontSize=26.sp,fontWeight=FontWeight.Bold,color=Ink)
                     Text(detail!!.kind.uppercase(Locale.getDefault()),color=detail!!.color)
