@@ -337,9 +337,36 @@ private object Wiki {
         if(inceptions.isNotEmpty()) inceptions.forEachIndexed { i,y -> options.add(DateOption("Основание / существование ${i+1}",y,dissolved.getOrNull(i) ?: dissolved.firstOrNull())) }
         addOptions("P569","Рождение"); addOptions("P570","Смерть"); addOptions("P585","Дата события"); addOptions("P576","Прекращение")
         if(start!=null && options.none { it.start==start && it.end==end }) options.add(0,DateOption("Основной период",start,end))
-        val defaultIndex=options.indexOfFirst { it.start==start && it.end==end }.coerceAtLeast(0)
+        val articleText=runCatching {
+            val article=json("https://ru.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&exchars=8000&titles="+q+"&format=json")
+            val articlePages=article.getJSONObject("query").getJSONObject("pages")
+            articlePages.getJSONObject(articlePages.keys().asSequence().first()).optString("extract")
+        }.getOrDefault("")
+        val rangeRegex=Regex("(?<!\\d)(\\d{3,4})\\s*[–—-]\\s*(\\d{3,4})(?!\\d)")
+        val ranges=rangeRegex.findAll(articleText).take(12).toList()
+        ranges.forEach { match ->
+            val a=match.groupValues[1].toIntOrNull(); val b=match.groupValues[2].toIntOrNull()
+            if(a!=null && b!=null && a in 100..2100 && b in 100..2100) {
+                val contextStart=(match.range.first-38).coerceAtLeast(0)
+                val contextEnd=(match.range.last+39).coerceAtMost(articleText.length)
+                val label=articleText.substring(contextStart,contextEnd).replace(Regex("\\s+")," ").trim().take(64)
+                options.add(DateOption("Из статьи: $label",a,b))
+            }
+        }
+        val rangeCovered=ranges.flatMap { it.range.toList() }.toSet()
+        Regex("(?<!\\d)(\\d{3,4})(?!\\d)").findAll(articleText).take(25).forEach { match ->
+            val y=match.groupValues[1].toIntOrNull()
+            if(y!=null && y in 100..2100 && options.none { it.start==y && it.end==null }) {
+                val contextStart=(match.range.first-30).coerceAtLeast(0)
+                val contextEnd=(match.range.last+31).coerceAtMost(articleText.length)
+                val label=articleText.substring(contextStart,contextEnd).replace(Regex("\\s+")," ").trim().take(58)
+                options.add(DateOption("Из статьи: $label",y,null))
+            }
+        }
+        val uniqueOptions=options.distinctBy { Triple(it.label,it.start,it.end) }
+        val defaultIndex=uniqueOptions.indexOfFirst { it.start==start && it.end==end }.coerceAtLeast(0)
         val kind=when { birth!=null||death!=null -> "Человек"; starts.isNotEmpty()||ends.isNotEmpty()||inceptions.isNotEmpty() -> "Событие"; else -> "Сущность" }
         val desc=entity.optJSONObject("descriptions")?.optJSONObject("ru")?.optString("value").orEmpty().ifBlank{e.description}
-        return e.copy(description=desc,wd=wd,start=start,end=end,kind=kind,dateOptions=options.distinctBy { Triple(it.label,it.start,it.end) },selectedDateOption=defaultIndex)
+        return e.copy(description=desc,wd=wd,start=start,end=end,kind=kind,dateOptions=uniqueOptions,selectedDateOption=defaultIndex)
     }
 }
