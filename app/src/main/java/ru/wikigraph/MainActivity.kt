@@ -331,7 +331,7 @@ class MainActivity:ComponentActivity() {
                                 val option=choice.first
                                 val index=choice.second
                                 val selected=index==dateDraftOptionIndex
-                                val isRange=option.start!=null && option.end!=null && option.start!=option.end
+                                val isRange=option.endDate!=null || (option.start!=null && option.end!=null && option.start!=option.end)
                                 Card(Modifier.fillMaxWidth().clickable { dateDraftOptionIndex=index },colors=CardDefaults.cardColors(containerColor=if(selected) Color(0xFFEAF0F8) else Color.White),border=androidx.compose.foundation.BorderStroke(if(selected) 1.5.dp else 1.dp,if(selected) Blue else Color(0xFFE3E7ED)),shape=RoundedCornerShape(12.dp)) {
                                     Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.Top) {
                                         RadioButton(selected=selected,onClick={dateDraftOptionIndex=index})
