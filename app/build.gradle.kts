@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -10,7 +12,7 @@ val stableDebugKeystore = layout.buildDirectory.file("signing/debug.keystore").g
 if (stableDebugKeystoreSource.exists()) {
     stableDebugKeystore.parentFile.mkdirs()
     stableDebugKeystore.writeBytes(
-        java.util.Base64.getMimeDecoder().decode(stableDebugKeystoreSource.readText())
+        Base64.getMimeDecoder().decode(stableDebugKeystoreSource.readText())
     )
 }
 
