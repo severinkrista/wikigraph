@@ -50,30 +50,81 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.util.Locale
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
 
 private val Ink = Color(0xFF23364D)
 private val Blue = Color(0xFF557DB8)
 private val Green = Color(0xFF328A78)
 private val Amber = Color(0xFFC18A42)
 private val Muted = Color(0xFF758294)
-data class DateOption(val label:String,val start:Int?,val end:Int?)
+data class DateOption(val label:String,val start:Int?,val end:Int?,val startDate:String?=null,val endDate:String?=null,val precision:String="year")
 data class CategoryOption(val title:String,val size:Int=0)
-data class Entry(val title:String, val description:String="", val pageId:Int=0, val wd:String="", val start:Int?=null, val end:Int?=null, val kind:String="Сущность", val url:String="https://ru.wikipedia.org", val dateOptions:List<DateOption> = emptyList(), val selectedDateOption:Int = 0, val hidden:Boolean=false, val categories:List<String> = emptyList()) {
+data class Entry(val title:String, val description:String="", val pageId:Int=0, val wd:String="", val start:Int?=null, val end:Int?=null, val kind:String="Сущность", val url:String="https://ru.wikipedia.org", val dateOptions:List<DateOption> = emptyList(), val selectedDateOption:Int = 0, val hidden:Boolean=false, val categories:List<String> = emptyList(), val startDate:String?=null, val endDate:String?=null, val datePrecision:String="year") {
     val color get() = listOf(
         Color(0xFF557DB8), Color(0xFF328A78), Color(0xFFC18A42), Color(0xFF9A69B5),
         Color(0xFFD45D79), Color(0xFF458FBD), Color(0xFF7A9D38), Color(0xFFCC7045),
         Color(0xFF5B6BBF), Color(0xFF299D91), Color(0xFFB85C9E), Color(0xFF8A7658)
     )[Math.floorMod(pageId, 12)]
-    val dates get() = if(start==null) "Даты не найдены" else if(end!=null && end!=start) year(start!!) + " — " + year(end!!) else year(start!!)
+    val dates get() = if(start==null && startDate==null) "Даты не найдены" else {
+        val first=startDate?.let { displayDate(it) } ?: start?.let { year(it) } ?: "?"
+        val last=endDate?.let { displayDate(it) } ?: end?.let { year(it) }
+        if(last!=null && (end!=start || endDate!=null)) "$first — $last" else first
+    }
+}
+private fun displayDate(value:String):String = runCatching {
+    when(value.length) { 4 -> value; 7 -> YearMonth.parse(value).format(DateTimeFormatter.ofPattern("MM.yyyy")); else -> LocalDate.parse(value).format(DateTimeFormatter.ofPattern("dd.MM.yyyy")) }
+}.getOrDefault(value)
+private fun parseDateInput(value:String):Pair<String,String>? {
+    val v=value.trim()
+    return runCatching {
+        when {
+            Regex("^\\d{4}$").matches(v) -> v to "year"
+            Regex("^\\d{4}-\\d{2}$").matches(v) -> { YearMonth.parse(v); v to "month" }
+            Regex("^\\d{4}-\\d{2}-\\d{2}$").matches(v) -> { LocalDate.parse(v); v to "day" }
+            else -> return null
+        }
+    }.getOrNull()
+}
+private fun yearFromDate(value:String?):Int? = value?.take(4)?.toIntOrNull()
+private fun normalizeWikidataTime(value:String?):Pair<String,String>? {
+    if(value.isNullOrBlank()) return null
+    val m=Regex("^([+-]?\\d{4,})-(\\d{2})-(\\d{2})").find(value) ?: return null
+    val y=m.groupValues[1].toIntOrNull() ?: return null
+    val mo=m.groupValues[2].toIntOrNull() ?: 0
+    val d=m.groupValues[3].toIntOrNull() ?: 0
+    if(y<=0 || mo !in 0..12 || d !in 0..31) return null
+    return when { mo==0 -> y.toString().padStart(4,'0') to "year"; d==0 -> "%04d-%02d".format(Locale.ROOT,y,mo) to "month"; else -> runCatching { LocalDate.of(y,mo,d).toString() to "day" }.getOrNull() }
+}
+private fun timelineValue(e:Entry,isEnd:Boolean):Double {
+    val value=if(isEnd) e.endDate else e.startDate
+    if(value!=null) {
+        val date=runCatching { when(value.length) {
+            4 -> if(isEnd && (e.end!=null || e.endDate!=null)) LocalDate.of(value.toInt(),12,31) else if(e.end==null && e.endDate==null) LocalDate.of(value.toInt(),7,1) else LocalDate.of(value.toInt(),1,1)
+            7 -> { val ym=YearMonth.parse(value); if(isEnd) ym.atEndOfMonth() else ym.atDay(1) }
+            else -> LocalDate.parse(value)
+        } }.getOrNull()
+        if(date!=null) return date.toEpochDay().toDouble()
+    }
+    val y=if(isEnd) e.end ?: e.start else e.start
+    if(y==null) return 0.0
+    val safeYear=if(y<=0) y-1 else y
+    val date=runCatching { when { isEnd && e.end!=null && e.end!=e.start -> LocalDate.of(safeYear,12,31); e.end==null -> LocalDate.of(safeYear,7,1); isEnd -> LocalDate.of(safeYear,12,31); else -> LocalDate.of(safeYear,1,1) } }.getOrNull()
+    return date?.toEpochDay()?.toDouble() ?: y.toDouble()*365.2425
+}
+private fun axisDate(value:Double,zoomSpan:Double):String {
+    val date=runCatching { LocalDate.ofEpochDay(value.toLong()) }.getOrNull() ?: return year((value/365.2425).toInt())
+    return when { zoomSpan<100.0 -> date.format(DateTimeFormatter.ofPattern("dd MMM",Locale("ru"))); zoomSpan<900.0 -> date.format(DateTimeFormatter.ofPattern("MMM yyyy",Locale("ru"))); else -> year(date.year) }
 }
 private fun serializeEntries(entries:List<Entry>):String {
     val a=org.json.JSONArray()
     entries.forEach { e -> a.put(JSONObject().apply {
         put("title",e.title); put("description",e.description); put("pageId",e.pageId); put("wd",e.wd)
-        put("start",e.start?:JSONObject.NULL); put("end",e.end?:JSONObject.NULL); put("kind",e.kind); put("url",e.url)
+        put("start",e.start?:JSONObject.NULL); put("end",e.end?:JSONObject.NULL); put("startDate",e.startDate?:JSONObject.NULL); put("endDate",e.endDate?:JSONObject.NULL); put("datePrecision",e.datePrecision); put("kind",e.kind); put("url",e.url)
         put("selectedDateOption",e.selectedDateOption); put("hidden",e.hidden)
         val categoryArray=org.json.JSONArray(); e.categories.forEach { categoryArray.put(it) }; put("categories",categoryArray)
-        val opts=org.json.JSONArray(); e.dateOptions.forEach { d -> opts.put(JSONObject().apply { put("label",d.label); put("start",d.start?:JSONObject.NULL); put("end",d.end?:JSONObject.NULL) }) }; put("dateOptions",opts)
+        val opts=org.json.JSONArray(); e.dateOptions.forEach { d -> opts.put(JSONObject().apply { put("label",d.label); put("start",d.start?:JSONObject.NULL); put("end",d.end?:JSONObject.NULL); put("startDate",d.startDate?:JSONObject.NULL); put("endDate",d.endDate?:JSONObject.NULL); put("precision",d.precision) }) }; put("dateOptions",opts)
     }) }
     return a.toString()
 }
@@ -81,8 +132,8 @@ private fun parseEntries(raw:String):List<Entry> = runCatching {
     val a=org.json.JSONArray(raw)
     (0 until a.length()).map { i ->
         val o=a.getJSONObject(i); val opts=o.optJSONArray("dateOptions")?:org.json.JSONArray()
-        val dates=(0 until opts.length()).map { j -> val d=opts.getJSONObject(j); DateOption(d.optString("label"),if(d.isNull("start")) null else d.optInt("start"),if(d.isNull("end")) null else d.optInt("end")) }
-        Entry(o.optString("title"),o.optString("description"),o.optInt("pageId"),o.optString("wd"),if(o.isNull("start")) null else o.optInt("start"),if(o.isNull("end")) null else o.optInt("end"),o.optString("kind","Сущность"),o.optString("url"),dates,o.optInt("selectedDateOption",0),o.optBoolean("hidden",false),(o.optJSONArray("categories")?:org.json.JSONArray()).let { a -> (0 until a.length()).map { a.optString(it) } })
+        val dates=(0 until opts.length()).map { j -> val d=opts.getJSONObject(j); DateOption(d.optString("label"),if(d.isNull("start")) null else d.optInt("start"),if(d.isNull("end")) null else d.optInt("end"),if(d.isNull("startDate")) null else d.optString("startDate"),if(d.isNull("endDate")) null else d.optString("endDate"),d.optString("precision","year")) }
+        Entry(o.optString("title"),o.optString("description"),o.optInt("pageId"),o.optString("wd"),if(o.isNull("start")) null else o.optInt("start"),if(o.isNull("end")) null else o.optInt("end"),o.optString("kind","Сущность"),o.optString("url"),dates,o.optInt("selectedDateOption",0),o.optBoolean("hidden",false),(o.optJSONArray("categories")?:org.json.JSONArray()).let { a -> (0 until a.length()).map { a.optString(it) } },if(o.isNull("startDate")) null else o.optString("startDate"),if(o.isNull("endDate")) null else o.optString("endDate"),o.optString("datePrecision","year"))
     }
 }.getOrDefault(emptyList())
 private fun year(y:Int)= if(y<0) (-y).toString()+" до н. э." else if(y==0) "ок. 1 до н. э." else y.toString()
@@ -984,23 +1035,23 @@ private object Wiki {
         var ends=listOf<Int>()
         var inception=listOf<Int>()
         var dissolved=listOf<Int>()
+        var startsExact=listOf<Pair<String,String>>()
+        var endsExact=listOf<Pair<String,String>>()
+        var inceptionExact=listOf<Pair<String,String>>()
+        var dissolvedExact=listOf<Pair<String,String>>()
         if(wd.isNotBlank()) runCatching {
             val entity=json("https://www.wikidata.org/wiki/Special:EntityData/"+wd+".json")
                 .getJSONObject("entities").getJSONObject(wd)
             val claims=entity.optJSONObject("claims") ?: JSONObject()
-            fun years(property:String):List<Int> {
+            fun rawTimes(property:String):List<String> {
                 val a=claims.optJSONArray(property) ?: return emptyList()
-                return (0 until a.length()).mapNotNull { i ->
-                    val value=a.getJSONObject(i).optJSONObject("mainsnak")?.optJSONObject("datavalue")
-                        ?.optJSONObject("value")?.optString("time") ?: return@mapNotNull null
-                    Regex("^([+-]?\\d{1,16})").find(value)?.groupValues?.get(1)?.toIntOrNull()
-                }.distinct()
+                return (0 until a.length()).mapNotNull { i -> a.getJSONObject(i).optJSONObject("mainsnak")?.optJSONObject("datavalue")?.optJSONObject("value")?.optString("time") }
             }
+            fun years(property:String):List<Int> = rawTimes(property).mapNotNull { value -> Regex("^([+-]?\\d{1,16})").find(value)?.groupValues?.get(1)?.toIntOrNull() }.distinct()
+            fun exactDates(property:String):List<Pair<String,String>> = rawTimes(property).mapNotNull { normalizeWikidataTime(it) }.distinct()
             fun addProperty(property:String,label:String) {
-                val values=years(property)
-                values.forEachIndexed { i,y ->
-                    options.add(DateOption(if(values.size>1) "$label · "+(i+1) else label,y,null))
-                }
+                val values=exactDates(property)
+                values.forEachIndexed { i,date -> options.add(DateOption(if(values.size>1) "$label · "+(i+1) else label,yearFromDate(date.first),null,date.first,null,date.second)) }
             }
             birth=years("P569").firstOrNull()
             death=years("P570").firstOrNull()
@@ -1008,6 +1059,10 @@ private object Wiki {
             ends=years("P582")
             inception=years("P571")
             dissolved=years("P576")
+            startsExact=exactDates("P580")
+            endsExact=exactDates("P582")
+            inceptionExact=exactDates("P571")
+            dissolvedExact=exactDates("P576")
             addProperty("P569","Рождение")
             addProperty("P570","Смерть")
             addProperty("P585","Дата события")
@@ -1016,16 +1071,16 @@ private object Wiki {
             addProperty("P582","Окончание периода")
             addProperty("P571","Основание / создание")
         }
-        starts.forEachIndexed { i,y -> options.add(DateOption("Период "+(i+1),y,ends.getOrNull(i) ?: ends.firstOrNull())) }
-        inception.forEachIndexed { i,y -> options.add(DateOption("Существование "+(i+1),y,dissolved.getOrNull(i) ?: dissolved.firstOrNull())) }
+        starts.forEachIndexed { i,y -> val st=startsExact.getOrNull(i) ?: startsExact.firstOrNull(); val en=endsExact.getOrNull(i) ?: endsExact.firstOrNull(); options.add(DateOption("Период "+(i+1),y,ends.getOrNull(i) ?: ends.firstOrNull(),st?.first,en?.first,st?.second ?: en?.second ?: "year")) }
+        inception.forEachIndexed { i,y -> val st=inceptionExact.getOrNull(i) ?: inceptionExact.firstOrNull(); val en=dissolvedExact.getOrNull(i) ?: dissolvedExact.firstOrNull(); options.add(DateOption("Существование "+(i+1),y,dissolved.getOrNull(i) ?: dissolved.firstOrNull(),st?.first,en?.first,st?.second ?: en?.second ?: "year")) }
         options.addAll(articleDateOptions(articleText))
         val primaryStart=starts.firstOrNull() ?: inception.firstOrNull() ?: birth ?: options.firstOrNull()?.start
         val primaryEnd=ends.firstOrNull() ?: dissolved.firstOrNull() ?: death
-        if(primaryStart!=null && options.none { it.start==primaryStart && it.end==primaryEnd }) {
-            options.add(0,DateOption("Основной период",primaryStart,primaryEnd))
-        }
+        val primaryStartDate=startsExact.firstOrNull()?.first ?: inceptionExact.firstOrNull()?.first
+        val primaryEndDate=endsExact.firstOrNull()?.first ?: dissolvedExact.firstOrNull()?.first
+        if(primaryStart!=null && options.none { it.start==primaryStart && it.end==primaryEnd }) options.add(0,DateOption("Основной период",primaryStart,primaryEnd,primaryStartDate,primaryEndDate,startsExact.firstOrNull()?.second ?: inceptionExact.firstOrNull()?.second ?: "year"))
         val uniqueOptions=options.distinctBy { Triple(it.label,it.start,it.end) }
-        val defaultIndex=uniqueOptions.indexOfFirst { it.start==primaryStart && it.end==primaryEnd }.coerceAtLeast(0)
+        val defaultIndex=uniqueOptions.indexOfFirst { it.start==primaryStart && it.end==primaryEnd && (it.startDate==primaryStartDate || primaryStartDate==null) }.coerceAtLeast(0)
         val kind=when {
             birth!=null || death!=null -> "Человек"
             starts.isNotEmpty() || ends.isNotEmpty() || inception.isNotEmpty() -> "Событие"
@@ -1038,6 +1093,6 @@ private object Wiki {
         }.getOrDefault("") else ""
         // Prefer the Wikipedia article introduction for richer details; fall back to Wikidata.
         val desc=articleText.ifBlank { wikidataDescription }.ifBlank { e.description }
-        return e.copy(description=desc,wd=wd,start=primaryStart,end=primaryEnd,kind=kind,dateOptions=uniqueOptions,selectedDateOption=defaultIndex,categories=categories)
+        return e.copy(description=desc,wd=wd,start=primaryStart,end=primaryEnd,kind=kind,dateOptions=uniqueOptions,selectedDateOption=defaultIndex,categories=categories,startDate=primaryStartDate,endDate=primaryEndDate,datePrecision=startsExact.firstOrNull()?.second ?: inceptionExact.firstOrNull()?.second ?: "year")
     }
 }
