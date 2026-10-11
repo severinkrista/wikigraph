@@ -572,8 +572,29 @@ private object Wiki {
         }
         val candidates=(related+temporal).distinctBy { it.pageId }
             .filter { it.pageId!=seed.pageId && it.title!=seed.title }
+        // Search snippets are short, so fetch a single batch of article introductions before
+        // scoring. This catches event years that do not appear in the search result snippet.
+        val enrichedCandidates=runCatching {
+            val ids=candidates.take(50).joinToString("|") { it.pageId.toString() }
+            if(ids.isBlank()) emptyMap<Int,String>() else {
+                val data=json("https://ru.wikipedia.org/w/api.php?action=query&prop=extracts&pageids="+ids+
+                    "&exintro=1&explaintext=1&exchars=1800&format=json&utf8=1")
+                    .getJSONObject("query").optJSONObject("pages") ?: JSONObject()
+                val found=mutableMapOf<Int,String>()
+                val keys=data.keys()
+                while(keys.hasNext()) {
+                    val page=data.getJSONObject(keys.next())
+                    found[page.optInt("pageid")]=page.optString("extract")
+                }
+                found
+            }
+        }.getOrDefault(emptyMap())
+        val candidatesWithText=candidates.map { c ->
+            val extract=enrichedCandidates[c.pageId].orEmpty()
+            if(extract.isBlank() || c.description.length>extract.length) c else c.copy(description=extract)
+        }
         val yearPattern=Regex("(?<!\\d)(\\d{1,4})(?!\\d)")
-        val ranked=candidates.map { candidate ->
+        val ranked=candidatesWithText.map { candidate ->
             val text=(candidate.title+" "+candidate.description).replace(Regex("<.*?>")," ")
             val mentioned=yearPattern.findAll(text).mapNotNull { it.groupValues[1].toIntOrNull() }
                 .filter { it in (center-radius)..(center+radius) }.toList()
