@@ -83,7 +83,8 @@ data class Entry(val title:String, val description:String="", val pageId:Int=0, 
     }
 }
 private fun plottedEntries(e:Entry):List<Entry> {
-    val selected=if(e.selectedDateOptions.isNotEmpty()) e.selectedDateOptions.distinct().mapNotNull { e.dateOptions.getOrNull(it) } else listOfNotNull(e.dateOptions.getOrNull(e.selectedDateOption))
+    if(e.selectedDateOptions.isEmpty()) return listOf(e)
+    val selected=e.selectedDateOptions.distinct().mapNotNull { e.dateOptions.getOrNull(it) }
     if(selected.isEmpty()) return listOf(e)
     return selected.map { option -> e.copy(start=option.start,end=option.end,startDate=option.startDate,endDate=option.endDate,datePrecision=option.precision,selectedDateOption=e.dateOptions.indexOf(option),selectedDateOptions=emptyList()) }
 }
