@@ -274,7 +274,32 @@ class MainActivity:ComponentActivity() {
                                         Text(if(cat.size>0) cat.size.toString()+" страниц в категории" else "Подкатегория",fontSize=11.sp,color=Muted)
                                         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                                             OutlinedButton(onClick={openCategory(cat)},modifier=Modifier.weight(1f)) { Text("Подкатегории") }
-                                            Button(onClick={scope.launch { busy=true; results=emptyList(); searchMode="articles"; selectedCategory=null; message="Загружаем статьи категории…"; try { results=withContext(Dispatchers.IO){Wiki.searchInCategory(cat.title)}; message=if(results.isEmpty()) "В категории нет доступных статей" else "Категория: "+cat.title } catch(e:Exception) { message="Не удалось загрузить статьи категории" } finally { busy=false } },modifier=Modifier.weight(1f)) { Text("Статьи") }
+                                            Button(
+                                                onClick = {
+                                                    scope.launch {
+                                                        busy = true
+                                                        results = emptyList()
+                                                        searchMode = "articles"
+                                                        selectedCategory = null
+                                                        message = "Загружаем статьи категории…"
+                                                        try {
+                                                            results = withContext(Dispatchers.IO) {
+                                                                Wiki.searchInCategory(cat.title)
+                                                            }
+                                                            message = if (results.isEmpty()) {
+                                                                "В категории нет доступных статей"
+                                                            } else {
+                                                                "Категория: " + cat.title
+                                                            }
+                                                        } catch (e: Exception) {
+                                                            message = "Не удалось загрузить статьи категории"
+                                                        } finally {
+                                                            busy = false
+                                                        }
+                                                    }
+                                                },
+                                                modifier = Modifier.weight(1f)
+                                            ) { Text("Статьи") }
                                         }
                                     }
                                 }
