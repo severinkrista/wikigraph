@@ -26,6 +26,12 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+      - name: Set up stable debug signing key
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.android"
+          base64 --decode ci/debug.keystore.b64 > "$HOME/.android/debug.keystore"
+          chmod 600 "$HOME/.android/debug.keystore"
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
       - name: Name APK with app version
