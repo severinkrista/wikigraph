@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -56,7 +57,7 @@ private val Amber = Color(0xFFC18A42)
 private val Muted = Color(0xFF758294)
 data class DateOption(val label:String,val start:Int?,val end:Int?)
 data class CategoryOption(val title:String,val size:Int=0)
-data class Entry(val title:String, val description:String="", val pageId:Int=0, val wd:String="", val start:Int?=null, val end:Int?=null, val kind:String="Сущность", val url:String="https://ru.wikipedia.org", val dateOptions:List<DateOption> = emptyList(), val selectedDateOption:Int = 0) {
+data class Entry(val title:String, val description:String="", val pageId:Int=0, val wd:String="", val start:Int?=null, val end:Int?=null, val kind:String="Сущность", val url:String="https://ru.wikipedia.org", val dateOptions:List<DateOption> = emptyList(), val selectedDateOption:Int = 0, val hidden:Boolean=false) {
     val color get() = listOf(
         Color(0xFF557DB8), Color(0xFF328A78), Color(0xFFC18A42), Color(0xFF9A69B5),
         Color(0xFFD45D79), Color(0xFF458FBD), Color(0xFF7A9D38), Color(0xFFCC7045),
@@ -69,7 +70,7 @@ private fun serializeEntries(entries:List<Entry>):String {
     entries.forEach { e -> a.put(JSONObject().apply {
         put("title",e.title); put("description",e.description); put("pageId",e.pageId); put("wd",e.wd)
         put("start",e.start?:JSONObject.NULL); put("end",e.end?:JSONObject.NULL); put("kind",e.kind); put("url",e.url)
-        put("selectedDateOption",e.selectedDateOption)
+        put("selectedDateOption",e.selectedDateOption); put("hidden",e.hidden)
         val opts=org.json.JSONArray(); e.dateOptions.forEach { d -> opts.put(JSONObject().apply { put("label",d.label); put("start",d.start?:JSONObject.NULL); put("end",d.end?:JSONObject.NULL) }) }; put("dateOptions",opts)
     }) }
     return a.toString()
@@ -79,7 +80,7 @@ private fun parseEntries(raw:String):List<Entry> = runCatching {
     (0 until a.length()).map { i ->
         val o=a.getJSONObject(i); val opts=o.optJSONArray("dateOptions")?:org.json.JSONArray()
         val dates=(0 until opts.length()).map { j -> val d=opts.getJSONObject(j); DateOption(d.optString("label"),if(d.isNull("start")) null else d.optInt("start"),if(d.isNull("end")) null else d.optInt("end")) }
-        Entry(o.optString("title"),o.optString("description"),o.optInt("pageId"),o.optString("wd"),if(o.isNull("start")) null else o.optInt("start"),if(o.isNull("end")) null else o.optInt("end"),o.optString("kind","Сущность"),o.optString("url"),dates,o.optInt("selectedDateOption",0))
+        Entry(o.optString("title"),o.optString("description"),o.optInt("pageId"),o.optString("wd"),if(o.isNull("start")) null else o.optInt("start"),if(o.isNull("end")) null else o.optInt("end"),o.optString("kind","Сущность"),o.optString("url"),dates,o.optInt("selectedDateOption",0),o.optBoolean("hidden",false))
     }
 }.getOrDefault(emptyList())
 private fun year(y:Int)= if(y<0) (-y).toString()+" до н. э." else if(y==0) "ок. 1 до н. э." else y.toString()
@@ -105,6 +106,7 @@ class MainActivity:ComponentActivity() {
     var recommendations by remember { mutableStateOf(listOf<Entry>()) }; var recommendationBusy by remember { mutableStateOf(false) }
     var screen by rememberSaveable { mutableStateOf("timeline") }; var graphFullscreen by rememberSaveable { mutableStateOf(false) }; var graphOrientation by rememberSaveable { mutableStateOf("vertical") }; var graphCompact by rememberSaveable { mutableStateOf(false) }; var showPreview by remember { mutableStateOf(false) }
     var filter by remember { mutableStateOf("Все") }; var busy by remember { mutableStateOf(false) }
+    var pulsePageId by remember { mutableIntStateOf(-1) }; var pulseTrigger by remember { mutableIntStateOf(0) }
     var message by remember { mutableStateOf("") }; var detail by remember { mutableStateOf<Entry?>(null) }
     var showScales by remember { mutableStateOf(false) }; var scaleName by remember { mutableStateOf("") }
     var showDateOptions by remember { mutableStateOf(false) }
@@ -484,16 +486,21 @@ class MainActivity:ComponentActivity() {
                     if(chosen.isEmpty()) item { Text("Добавляй статьи через поиск — даты появятся на общей шкале.",color=Muted,fontSize=13.sp) }
                     items(chosen.toList(),key={ "selected-"+it.pageId }) { e ->
                         Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(12.dp)) {
-                            Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) { Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink); Text(e.dates,fontSize=12.sp,color=Muted) }
-                                TextButton(onClick={recommendationSeed=e;recommendations=emptyList();message="Стартовая статья выбрана: "+e.title}) { Text(if(recommendationSeed?.pageId==e.pageId) "Старт ✓" else "Старт") }
+                            Row(Modifier.fillMaxWidth().padding(8.dp),verticalAlignment=Alignment.CenterVertically) {
+                                IconButton(onClick={if(!e.hidden){pulsePageId=e.pageId;pulseTrigger++}else message="Сначала покажите статью на графике"},modifier=Modifier.size(40.dp)) {
+                                    Box(Modifier.size(20.dp).clip(CircleShape).background(e.color).padding(3.dp),contentAlignment=Alignment.Center) {
+                                        Box(Modifier.fillMaxSize().clip(CircleShape).background(Color.White.copy(alpha=0.8f)))
+                                    }
+                                }
+                                Column(Modifier.weight(1f).padding(horizontal=4.dp)) { Text(e.title,fontWeight=FontWeight.SemiBold,color=if(e.hidden) Muted else Ink); Text(e.dates+" · "+if(e.hidden) "скрыта" else "на графике",fontSize=12.sp,color=Muted) }
+                                TextButton(onClick={val i=chosen.indexOfFirst{it.pageId==e.pageId};if(i>=0)chosen[i]=e.copy(hidden=!e.hidden);save()}) { Text(if(e.hidden) "Показать" else "Скрыть") }
                                 IconButton(onClick={chosen.remove(e);if(recommendationSeed?.pageId==e.pageId) recommendationSeed=null;save()}) { Icon(Icons.Default.DeleteOutline,"Удалить из набора",tint=Muted) }
                             }
                         }
                     }
                 }
             } else if(graphFullscreen) {
-                val visible=chosen.filter{filter=="Все"||it.kind==filter}.sortedBy{it.start?:Int.MAX_VALUE}
+                val visible=chosen.filter{!it.hidden}.sortedBy{it.start?:Int.MAX_VALUE}
                 Column(Modifier.fillMaxSize()) {
                     Row(Modifier.fillMaxWidth().padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically) {
                         Text("${visible.size} сущностей",Modifier.weight(1f),fontWeight=FontWeight.Bold,color=Ink)
@@ -503,16 +510,15 @@ class MainActivity:ComponentActivity() {
                     }
                     if(visible.isEmpty()) Text("Добавьте статьи через поиск",Modifier.padding(20.dp),color=Muted)
                     else Box(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
-                        HistoricalGraph(visible,Modifier.fillMaxWidth(),onSelect={detail=it},fullScreen=true,compact=graphCompact)
+                        HistoricalGraph(visible,Modifier.fillMaxWidth(),onSelect={detail=it},fullScreen=true,compact=graphCompact,pulsePageId=pulsePageId,pulseTrigger=pulseTrigger)
                     }
                 }
             } else LazyColumn(Modifier.fillMaxSize().padding(pad),contentPadding=PaddingValues(16.dp,8.dp,16.dp,24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                 item { Row(verticalAlignment=Alignment.CenterVertically) { Text(chosen.size.toString()+" сущностей",Modifier.weight(1f),fontSize=13.sp,color=Muted); TextButton(onClick={showScales=true}){Text("Шкалы")}; TextButton(onClick={graphCompact=!graphCompact}){Text(if(graphCompact) "Обычный вид" else "Компактно")}; TextButton(onClick={graphFullscreen=true}){Text("Развернуть")} } }
-                item { Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp)) { listOf("Все","Человек","Событие","Эпоха","Сущность").forEach { f -> FilterChip(selected=filter==f,onClick={filter=f},label={Text(f)}) } } }
-                val visible=chosen.filter{filter=="Все"||it.kind==filter}.sortedBy{it.start?:Int.MAX_VALUE}
+                val visible=chosen.filter{!it.hidden}.sortedBy{it.start?:Int.MAX_VALUE}
                 if(visible.isEmpty()) item { Column(Modifier.fillMaxWidth().padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally) { Icon(Icons.Default.Timeline,null,tint=Muted,modifier=Modifier.size(38.dp)); Text("Временная шкала пока пуста",color=Muted); Text("Откройте «Поиск статей» и добавьте нужные статьи",fontSize=12.sp,color=Muted) } }
                 else {
-                    item { HistoricalGraph(visible,Modifier.fillMaxWidth(),onSelect={detail=it},fullScreen=false,compact=graphCompact) }
+                    item { HistoricalGraph(visible,Modifier.fillMaxWidth(),onSelect={detail=it},fullScreen=false,compact=graphCompact,pulsePageId=pulsePageId,pulseTrigger=pulseTrigger) }
                     if(graphFullscreen) item { Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End) {
                         TextButton(onClick={graphOrientation=if(graphOrientation=="vertical") "horizontal" else "vertical"; (context as? ComponentActivity)?.requestedOrientation=if(graphOrientation=="horizontal") ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT}) { Text(if(graphOrientation=="vertical") "Альбомная ориентация" else "Книжная ориентация") }
                         TextButton(onClick={graphFullscreen=false;(context as? ComponentActivity)?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED}) { Text("Готово") }
@@ -531,7 +537,14 @@ class MainActivity:ComponentActivity() {
         }
     }
 }
-@Composable private fun HistoricalGraph(entries:List<Entry>,modifier:Modifier=Modifier,onSelect:(Entry)->Unit,fullScreen:Boolean,compact:Boolean=false) {
+@Composable private fun HistoricalGraph(entries:List<Entry>,modifier:Modifier=Modifier,onSelect:(Entry)->Unit,fullScreen:Boolean,compact:Boolean=false,pulsePageId:Int?=null,pulseTrigger:Int=0) {
+    var pulseOn by remember { mutableStateOf(false) }
+    LaunchedEffect(pulseTrigger,pulsePageId) {
+        if(pulsePageId!=null) {
+            repeat(6) { pulseOn=(it%2==0); delay(230) }
+            pulseOn=false
+        }
+    }
     val dates=entries.flatMap { listOfNotNull(it.start,it.end) }
     val low=(dates.minOrNull()?:0).toFloat()
     val high=(dates.maxOrNull()?:100).toFloat()
@@ -647,6 +660,7 @@ class MainActivity:ComponentActivity() {
                 val tick=(visibleStart+visibleSpan*i/4).toInt()
                 drawContext.canvas.nativeCanvas.drawText(year(tick),x,14.dp.toPx(),tickPaint)
             }
+            clipRect(left,axisY,size.width-right,size.height) {
             entries.forEachIndexed { i,e ->
                 val cy=axisY+12.dp.toPx()+laneHeight.toPx()*i+laneHeight.toPx()*.5f
                 drawLine(Color(0xFFF0F2F5),androidx.compose.ui.geometry.Offset(left,cy),androidx.compose.ui.geometry.Offset(size.width-right,cy),strokeWidth=1.dp.toPx())
@@ -654,11 +668,17 @@ class MainActivity:ComponentActivity() {
                 val endYear=(e.end?:e.start?:low.toInt()).toFloat()
                 val x1=left+((startYear-low)/span)*contentWidth-pan
                 val x2=left+((endYear-low)/span)*contentWidth-pan
+                val pulsing=e.pageId==pulsePageId && pulseOn
                 if(e.start!=null && e.end!=null && e.end!=e.start) {
-                    drawLine(e.color,androidx.compose.ui.geometry.Offset(minOf(x1,x2),cy),androidx.compose.ui.geometry.Offset(maxOf(x1,x2),cy),strokeWidth=8.dp.toPx())
-                    drawCircle(e.color,4.dp.toPx(),androidx.compose.ui.geometry.Offset((x1+x2)/2,cy))
+                    if(pulsing) drawLine(e.color.copy(alpha=.28f),androidx.compose.ui.geometry.Offset(minOf(x1,x2),cy),androidx.compose.ui.geometry.Offset(maxOf(x1,x2),cy),strokeWidth=18.dp.toPx())
+                    drawLine(e.color,androidx.compose.ui.geometry.Offset(minOf(x1,x2),cy),androidx.compose.ui.geometry.Offset(maxOf(x1,x2),cy),strokeWidth=if(pulsing) 11.dp.toPx() else 8.dp.toPx())
+                    drawCircle(e.color,if(pulsing) 6.dp.toPx() else 4.dp.toPx(),androidx.compose.ui.geometry.Offset((x1+x2)/2,cy))
                 }
-                drawCircle(e.color,6.dp.toPx(),androidx.compose.ui.geometry.Offset(x1,cy))
+                drawCircle(e.color,if(pulsing) 9.dp.toPx() else 6.dp.toPx(),androidx.compose.ui.geometry.Offset(x1,cy))
+            }
+            }
+            entries.forEachIndexed { i,e ->
+                val cy=axisY+12.dp.toPx()+laneHeight.toPx()*i+laneHeight.toPx()*.5f
                 drawContext.canvas.nativeCanvas.drawText(e.title.take(13),4.dp.toPx(),cy+4.dp.toPx(),labelPaint)
             }
             selectedYear?.let { selected ->
