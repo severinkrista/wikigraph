@@ -53,7 +53,7 @@ private val Blue = Color(0xFF557DB8)
 private val Green = Color(0xFF328A78)
 private val Amber = Color(0xFFC18A42)
 private val Muted = Color(0xFF758294)
-data class DateOption(val label:String,val start:Int?,val end:Int?)
+data class DateOption(val label:String,val start:Int?,val end:Int?)\ndata class CategoryOption(val title:String,val size:Int=0)
 data class Entry(val title:String, val description:String="", val pageId:Int=0, val wd:String="", val start:Int?=null, val end:Int?=null, val kind:String="Сущность", val url:String="https://ru.wikipedia.org", val dateOptions:List<DateOption> = emptyList(), val selectedDateOption:Int = 0) {
     val color get() = listOf(
         Color(0xFF557DB8), Color(0xFF328A78), Color(0xFFC18A42), Color(0xFF9A69B5),
@@ -91,6 +91,10 @@ class MainActivity:ComponentActivity() {
     val prefs=remember { context.getSharedPreferences("wg",0) }
     val chosen=remember { mutableStateListOf<Entry>().apply { addAll(parseEntries(prefs.getString("entries","[]") ?: "[]")) } }
     var query by remember { mutableStateOf("") }; var results by remember { mutableStateOf(listOf<Entry>()) }
+    var categoryQuery by remember { mutableStateOf("") }; var categories by remember { mutableStateOf(listOf<CategoryOption>()) }
+    var selectedCategory by remember { mutableStateOf<CategoryOption?>(null) }
+    var recommendationSeed by remember { mutableStateOf<Entry?>(null) }; var recommendationRadius by remember { mutableIntStateOf(5) }
+    var recommendations by remember { mutableStateOf(listOf<Entry>()) }; var recommendationBusy by remember { mutableStateOf(false) }
     var screen by rememberSaveable { mutableStateOf("timeline") }; var graphFullscreen by rememberSaveable { mutableStateOf(false) }; var graphOrientation by rememberSaveable { mutableStateOf("vertical") }; var showPreview by remember { mutableStateOf(false) }
     var filter by remember { mutableStateOf("Все") }; var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }; var detail by remember { mutableStateOf<Entry?>(null) }
@@ -101,7 +105,9 @@ class MainActivity:ComponentActivity() {
     fun goBack() { when { showDateOptions -> showDateOptions=false; showScales -> showScales=false; showPreview -> showPreview=false; detail!=null -> detail=null; graphFullscreen -> { graphFullscreen=false; (context as? ComponentActivity)?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }; screen=="search" -> screen="timeline" } }
     BackHandler(enabled=showDateOptions||showScales||showPreview||detail!=null||graphFullscreen||screen=="search") { goBack() }
     fun save() { prefs.edit().putString("entries",serializeEntries(chosen)).apply() }
-    fun search() { if(query.isBlank()) return; scope.launch { busy=true; message=""; try { results=withContext(Dispatchers.IO){ Wiki.search(query.trim()) }; if(results.isEmpty()) message="Ничего не найдено" } catch(e:Exception) { message="Ошибка загрузки. Проверьте интернет." } finally { busy=false } } }
+    fun search() { if(query.isBlank() && selectedCategory==null) return; scope.launch { busy=true; message=""; try { results=withContext(Dispatchers.IO){ if(selectedCategory!=null) Wiki.searchInCategory(selectedCategory!!.title) else Wiki.search(query.trim()) }; if(results.isEmpty()) message="Ничего не найдено" } catch(e:Exception) { message="Ошибка загрузки. Проверьте интернет." } finally { busy=false } } }
+    fun loadCategories() { if(categoryQuery.isBlank()) return; scope.launch { busy=true; try { categories=withContext(Dispatchers.IO){ Wiki.searchCategories(categoryQuery) }; if(categories.isEmpty()) message="Категории не найдены" } catch(e:Exception) { message="Не удалось загрузить категории" } finally { busy=false } } }
+    fun loadRecommendations() { val seed=recommendationSeed ?: chosen.lastOrNull() ?: return; scope.launch { recommendationBusy=true; try { recommendations=withContext(Dispatchers.IO){ Wiki.recommend(seed,recommendationRadius) }; if(recommendations.isEmpty()) message="Подходящие статьи не найдены — попробуйте увеличить период" } catch(e:Exception) { message="Не удалось загрузить рекомендации" } finally { recommendationBusy=false } } }
     MaterialTheme(colorScheme=lightColorScheme(primary=Ink,secondary=Green,background=Color(0xFFF7F8FA),surface=Color.White)) {
         Scaffold(modifier=Modifier.pointerInput(screen,detail,graphFullscreen,showPreview,showScales,showDateOptions) {
             awaitEachGesture {
@@ -203,8 +209,62 @@ class MainActivity:ComponentActivity() {
                         }
                     }
                     item {
-                        OutlinedTextField(value=query,onValueChange={query=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("Найти в Википедии…")},leadingIcon={Icon(Icons.Default.Search,null)},trailingIcon={if(busy) CircularProgressIndicator(Modifier.size(22.dp),strokeWidth=2.dp) else IconButton(onClick={search()}){Icon(Icons.Default.Search,"Искать")}},singleLine=true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={search()}),shape=RoundedCornerShape(16.dp))
+                        OutlinedTextField(value=query,onValueChange={query=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("Найти статью в Википедии…")},leadingIcon={Icon(Icons.Default.Search,null)},trailingIcon={if(busy) CircularProgressIndicator(Modifier.size(22.dp),strokeWidth=2.dp) else IconButton(onClick={search()}){Icon(Icons.Default.Search,"Искать")}},singleLine=true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={search()}),shape=RoundedCornerShape(16.dp))
+                        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                            OutlinedTextField(value=categoryQuery,onValueChange={categoryQuery=it},modifier=Modifier.weight(1f),placeholder={Text("Категория Википедии")},singleLine=true)
+                            Spacer(Modifier.width(8.dp))
+                            OutlinedButton(onClick={loadCategories()}) { Text("Найти") }
+                        }
+                        if(categories.isNotEmpty()) {
+                            Text("Выберите категорию",fontSize=12.sp,color=Muted)
+                            LazyColumn(Modifier.fillMaxWidth().heightIn(max=170.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                                items(categories,key={ "cat-"+it.title }) { cat ->
+                                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(if(selectedCategory?.title==cat.title) Color(0xFFEAF0F8) else Color.White).clickable { selectedCategory=if(selectedCategory?.title==cat.title) null else cat; categoryQuery=cat.title }.padding(horizontal=10.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically) {
+                                        Text(if(selectedCategory?.title==cat.title) "✓ " else "",color=Blue)
+                                        Text(cat.title,Modifier.weight(1f),fontSize=13.sp,color=Ink)
+                                        Text(cat.size.toString(),fontSize=11.sp,color=Muted)
+                                    }
+                                }
+                            }
+                        }
+                        if(selectedCategory!=null) {
+                            Row(verticalAlignment=Alignment.CenterVertically) {
+                                Text("Категория: "+selectedCategory!!.title,Modifier.weight(1f),fontSize=12.sp,color=Green)
+                                TextButton(onClick={selectedCategory=null}) { Text("Сбросить") }
+                            }
+                            Button(onClick={search()},modifier=Modifier.fillMaxWidth()) { Text("Показать статьи категории") }
+                        }
                         if(message.isNotBlank()) Text(message,color=Muted,fontSize=12.sp,modifier=Modifier.padding(top=6.dp))
+                    }
+                    if(recommendationSeed!=null) {
+                        item {
+                            Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(14.dp)) {
+                                Column(Modifier.fillMaxWidth().padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                                    Text("События рядом с исходной статьёй",fontWeight=FontWeight.Bold,color=Ink)
+                                    Text(recommendationSeed!!.title+" · "+(recommendationSeed!!.start?.let{year(it)} ?: "год не определён"),fontSize=12.sp,color=Muted)
+                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                                        listOf(1,5,10).forEach { radius -> FilterChip(selected=recommendationRadius==radius,onClick={recommendationRadius=radius},label={Text("±$radius лет")}) }
+                                    }
+                                    Button(onClick={loadRecommendations},modifier=Modifier.fillMaxWidth(),enabled=!recommendationBusy) {
+                                        if(recommendationBusy) CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp) else Text("Найти рекомендации")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if(recommendations.isNotEmpty()) {
+                        item { Label("СТАТЬИ РЯДОМ ПО ВРЕМЕНИ",recommendations.size.toString()) }
+                        items(recommendations,key={ "rec-"+it.pageId }) { e ->
+                            Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(12.dp)) {
+                                Row(Modifier.fillMaxWidth().padding(10.dp),verticalAlignment=Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) { Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink); if(e.description.isNotBlank()) Text(e.description,fontSize=12.sp,color=Muted,maxLines=2) }
+                                    IconButton(onClick={
+                                        if(chosen.any{it.pageId==e.pageId}) message="Уже добавлено"
+                                        else scope.launch { busy=true; try { val full=withContext(Dispatchers.IO){Wiki.enrich(e)}; chosen.add(full); save(); message="Добавлено на шкалу"; recommendations=recommendations.filterNot{it.pageId==e.pageId} } catch(ex:Exception) { message="Не удалось добавить статью" } finally { busy=false } }
+                                    }) { Icon(Icons.Default.Add,"Добавить на график",tint=Blue) }
+                                }
+                            }
+                        }
                     }
                     if(results.isNotEmpty()) {
                         item { Label("РЕЗУЛЬТАТЫ ПОИСКА",results.size.toString()) }
@@ -220,7 +280,7 @@ class MainActivity:ComponentActivity() {
                                         if(chosen.any{it.pageId==e.pageId}) message="Уже добавлено"
                                         else scope.launch {
                                             busy=true; message="Загружаем даты из Викиданных…"
-                                            try { val full=withContext(Dispatchers.IO){Wiki.enrich(e)}; chosen.add(full); save(); message="Добавлено на шкалу" }
+                                            try { val full=withContext(Dispatchers.IO){Wiki.enrich(e)}; chosen.add(full); save(); recommendationSeed=full; recommendations=emptyList(); message="Добавлено на шкалу. Можно искать события этого периода." }
                                             catch(ex:Exception) { chosen.add(e); save(); message="Статья добавлена, но даты загрузить не удалось" }
                                             finally { busy=false }
                                         }
@@ -436,16 +496,66 @@ private object Wiki {
         return try { JSONObject(c.inputStream.bufferedReader().use { it.readText() }) } finally { c.disconnect() }
     }
 
+    private fun entry(title:String,pageId:Int,description:String=""):Entry =
+        Entry(title,android.text.Html.fromHtml(description.replace(Regex("<.*?>"),""),android.text.Html.FROM_HTML_MODE_COMPACT).toString(),pageId,
+            url="https://ru.wikipedia.org/wiki/"+URLEncoder.encode(title.replace(' ','_'),"UTF-8").replace("+","%20"))
+
     fun search(q:String):List<Entry> {
         val s=URLEncoder.encode(q,"UTF-8")
-        val a=json("https://ru.wikipedia.org/w/api.php?action=query&list=search&srsearch="+s+"&srnamespace=0&srlimit=12&format=json&utf8=1")
+        val a=json("https://ru.wikipedia.org/w/api.php?action=query&list=search&srsearch="+s+"&srnamespace=0&srlimit=20&format=json&utf8=1")
             .getJSONObject("query").getJSONArray("search")
-        return (0 until a.length()).map { i ->
-            val o=a.getJSONObject(i)
-            val title=o.getString("title")
-            Entry(title,android.text.Html.fromHtml(o.optString("snippet").replace(Regex("<.*?>"),""),android.text.Html.FROM_HTML_MODE_COMPACT).toString(),o.getInt("pageid"),
-                url="https://ru.wikipedia.org/wiki/"+URLEncoder.encode(title.replace(' ','_'),"UTF-8").replace("+","%20"))
+        return (0 until a.length()).map { i -> val o=a.getJSONObject(i); entry(o.getString("title"),o.getInt("pageid"),o.optString("snippet")) }
+    }
+
+    fun searchCategories(prefix:String):List<CategoryOption> {
+        val s=URLEncoder.encode(prefix.trim(),"UTF-8")
+        val a=json("https://ru.wikipedia.org/w/api.php?action=query&list=allcategories&acprefix="+s+"&aclimit=30&acprop=size&format=json&utf8=1")
+            .getJSONObject("query").getJSONArray("allcategories")
+        return (0 until a.length()).map { i -> val o=a.getJSONObject(i); CategoryOption(o.optString("*"),o.optInt("size")) }
+    }
+
+    fun searchInCategory(category:String):List<Entry> {
+        val title=URLEncoder.encode("Category:"+category,"UTF-8")
+        val pages=json("https://ru.wikipedia.org/w/api.php?action=query&generator=categorymembers&gcmtitle="+title+"&gcmtype=page&gcmnamespace=0&gcmlimit=40&prop=extracts&exintro=1&explaintext=1&exchars=240&format=json&utf8=1")
+            .getJSONObject("query").optJSONObject("pages") ?: return emptyList()
+        val out=mutableListOf<Entry>()
+        val keys=pages.keys()
+        while(keys.hasNext()) { val p=pages.getJSONObject(keys.next()); out.add(entry(p.optString("title"),p.optInt("pageid"),p.optString("extract"))) }
+        return out.sortedBy { it.title.lowercase(Locale.ROOT) }
+    }
+
+    fun recommend(seed:Entry,radius:Int):List<Entry> {
+        val center=seed.start ?: seed.dateOptions.firstNotNullOfOrNull { it.start } ?: return emptyList()
+        val years=(center-radius..center+radius).filter { it!=center }
+        val query=years.joinToString(" OR ") { it.toString() }
+        val encoded=URLEncoder.encode("($query)","UTF-8")
+        val searchPages=json("https://ru.wikipedia.org/w/api.php?action=query&list=search&srsearch="+encoded+"&srnamespace=0&srlimit=50&format=json&utf8=1")
+            .getJSONObject("query").getJSONArray("search")
+        val candidates=(0 until searchPages.length()).map { i -> val o=searchPages.getJSONObject(i); entry(o.getString("title"),o.getInt("pageid"),o.optString("snippet")) }
+            .filter { it.pageId!=seed.pageId && it.title!=seed.title }
+        val seedCats=runCatching {
+            val title=URLEncoder.encode(seed.title,"UTF-8")
+            val pages=json("https://ru.wikipedia.org/w/api.php?action=query&prop=categories&cllimit=30&titles="+title+"&format=json&utf8=1").getJSONObject("query").getJSONObject("pages")
+            val keys=pages.keys(); if(!keys.hasNext()) emptyList() else {
+                val cats=pages.getJSONObject(keys.next()).optJSONArray("categories") ?: org.json.JSONArray()
+                (0 until cats.length()).map { cats.getJSONObject(it).optString("title").removePrefix("Category:") }.filter { !it.startsWith("Статьи с ") && !it.startsWith("Википедия:") }
+            }
+        }.getOrDefault(emptyList())
+        val related=mutableListOf<Entry>()
+        seedCats.take(4).forEach { cat ->
+            runCatching {
+                val title=URLEncoder.encode("Category:"+cat,"UTF-8")
+                val pages=json("https://ru.wikipedia.org/w/api.php?action=query&generator=categorymembers&gcmtitle="+title+"&gcmtype=page&gcmnamespace=0&gcmlimit=15&prop=info&format=json&utf8=1").getJSONObject("query").optJSONObject("pages")
+                if(pages!=null) { val keys=pages.keys(); while(keys.hasNext()) { val p=pages.getJSONObject(keys.next()); related.add(entry(p.optString("title"),p.optInt("pageid"))) } }
+            }
         }
+        val all=(related+candidates).distinctBy { it.pageId }.filter { it.pageId!=seed.pageId }
+        return all.sortedWith(compareByDescending<Entry> { e ->
+            val titleAndDesc=(e.title+" "+e.description).lowercase(Locale.ROOT)
+            years.count { year -> Regex("(?<!\\d)"+Regex.escape(year.toString())+"(?!\\d)").containsMatchIn(titleAndDesc) }*3 +
+                if(related.any { it.pageId==e.pageId }) 2 else 0
+        }.thenBy { e -> kotlin.math.abs((Regex("\\d{3,4}").find(e.title)?.value?.toIntOrNull() ?: center)-center) })
+            .take(35)
     }
 
     private fun articleDateOptions(text:String):List<DateOption> {
