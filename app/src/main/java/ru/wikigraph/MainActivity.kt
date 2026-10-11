@@ -6,6 +6,8 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -48,7 +50,8 @@ private val Blue = Color(0xFF557DB8)
 private val Green = Color(0xFF328A78)
 private val Amber = Color(0xFFC18A42)
 private val Muted = Color(0xFF758294)
-data class Entry(val title:String, val description:String="", val pageId:Int=0, val wd:String="", val start:Int?=null, val end:Int?=null, val kind:String="Сущность", val url:String="https://ru.wikipedia.org") {
+data class DateOption(val label:String,val start:Int?,val end:Int?)
+data class Entry(val title:String, val description:String="", val pageId:Int=0, val wd:String="", val start:Int?=null, val end:Int?=null, val kind:String="Сущность", val url:String="https://ru.wikipedia.org", val dateOptions:List<DateOption> = emptyList(), val selectedDateOption:Int = 0) {
     val color get() = listOf(
         Color(0xFF557DB8), Color(0xFF328A78), Color(0xFFC18A42), Color(0xFF9A69B5),
         Color(0xFFD45D79), Color(0xFF458FBD), Color(0xFF7A9D38), Color(0xFFCC7045),
@@ -56,6 +59,24 @@ data class Entry(val title:String, val description:String="", val pageId:Int=0, 
     )[Math.floorMod(pageId, 12)]
     val dates get() = if(start==null) "Даты не найдены" else if(end!=null && end!=start) year(start!!) + " — " + year(end!!) else year(start!!)
 }
+private fun serializeEntries(entries:List<Entry>):String {
+    val a=org.json.JSONArray()
+    entries.forEach { e -> a.put(JSONObject().apply {
+        put("title",e.title); put("description",e.description); put("pageId",e.pageId); put("wd",e.wd)
+        put("start",e.start?:JSONObject.NULL); put("end",e.end?:JSONObject.NULL); put("kind",e.kind); put("url",e.url)
+        put("selectedDateOption",e.selectedDateOption)
+        val opts=org.json.JSONArray(); e.dateOptions.forEach { d -> opts.put(JSONObject().apply { put("label",d.label); put("start",d.start?:JSONObject.NULL); put("end",d.end?:JSONObject.NULL) }) }; put("dateOptions",opts)
+    }) }
+    return a.toString()
+}
+private fun parseEntries(raw:String):List<Entry> = runCatching {
+    val a=org.json.JSONArray(raw)
+    (0 until a.length()).map { i ->
+        val o=a.getJSONObject(i); val opts=o.optJSONArray("dateOptions")?:org.json.JSONArray()
+        val dates=(0 until opts.length()).map { j -> val d=opts.getJSONObject(j); DateOption(d.optString("label"),if(d.isNull("start")) null else d.optInt("start"),if(d.isNull("end")) null else d.optInt("end")) }
+        Entry(o.optString("title"),o.optString("description"),o.optInt("pageId"),o.optString("wd"),if(o.isNull("start")) null else o.optInt("start"),if(o.isNull("end")) null else o.optInt("end"),o.optString("kind","Сущность"),o.optString("url"),dates,o.optInt("selectedDateOption",0))
+    }
+}.getOrDefault(emptyList())
 private fun year(y:Int)= if(y<0) (-y).toString()+" до н. э." else if(y==0) "ок. 1 до н. э." else y.toString()
 
 class MainActivity:ComponentActivity() {
@@ -65,21 +86,21 @@ class MainActivity:ComponentActivity() {
 @Composable fun App() {
     val context=androidx.compose.ui.platform.LocalContext.current
     val prefs=remember { context.getSharedPreferences("wg",0) }
-    val chosen=remember { mutableStateListOf<Entry>().apply {
-        runCatching {
-            val a=org.json.JSONArray(prefs.getString("entries","[]"))
-            for(i in 0 until a.length()) { val o=a.getJSONObject(i); add(Entry(o.optString("title"),o.optString("description"),o.optInt("pageId"),o.optString("wd"),if(o.isNull("start")) null else o.optInt("start"),if(o.isNull("end")) null else o.optInt("end"),o.optString("kind","Сущность"),o.optString("url"))) }
-        }
-    } }
+    val chosen=remember { mutableStateListOf<Entry>().apply { addAll(parseEntries(prefs.getString("entries","[]") ?: "[]")) } }
     var query by remember { mutableStateOf("") }; var results by remember { mutableStateOf(listOf<Entry>()) }
     var screen by rememberSaveable { mutableStateOf("timeline") }; var graphFullscreen by rememberSaveable { mutableStateOf(false) }; var graphOrientation by rememberSaveable { mutableStateOf("vertical") }; var showPreview by remember { mutableStateOf(false) }
     var filter by remember { mutableStateOf("Все") }; var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }; var detail by remember { mutableStateOf<Entry?>(null) }
+    var showScales by remember { mutableStateOf(false) }; var scaleName by remember { mutableStateOf("") }
+    var showDateOptions by remember { mutableStateOf(false) }
+    var savedScales by remember { mutableStateOf(org.json.JSONArray(prefs.getString("scales","[]"))) }
     val scope= rememberCoroutineScope()
-    fun save() { val a=org.json.JSONArray(); chosen.forEach { e -> a.put(JSONObject().apply { put("title",e.title);put("description",e.description);put("pageId",e.pageId);put("wd",e.wd);put("start",e.start?:JSONObject.NULL);put("end",e.end?:JSONObject.NULL);put("kind",e.kind);put("url",e.url) }) }; prefs.edit().putString("entries",a.toString()).apply() }
+    fun goBack() { when { showDateOptions -> showDateOptions=false; showScales -> showScales=false; showPreview -> showPreview=false; detail!=null -> detail=null; graphFullscreen -> { graphFullscreen=false; (context as? ComponentActivity)?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }; screen=="search" -> screen="timeline" } }
+    BackHandler(enabled=showDateOptions||showScales||showPreview||detail!=null||graphFullscreen||screen=="search") { goBack() }
+    fun save() { prefs.edit().putString("entries",serializeEntries(chosen)).apply() }
     fun search() { if(query.isBlank()) return; scope.launch { busy=true; message=""; try { results=withContext(Dispatchers.IO){ Wiki.search(query.trim()) }; if(results.isEmpty()) message="Ничего не найдено" } catch(e:Exception) { message="Ошибка загрузки. Проверьте интернет." } finally { busy=false } } }
     MaterialTheme(colorScheme=lightColorScheme(primary=Ink,secondary=Green,background=Color(0xFFF7F8FA),surface=Color.White)) {
-        Scaffold(topBar={ if(!graphFullscreen) TopAppBar(title={Column { Text("WikiGraph",fontWeight=FontWeight.Bold,color=Ink); Text("История на одной шкале",fontSize=12.sp,color=Muted) }},actions={Text(chosen.size.toString(),color=Muted,modifier=Modifier.padding(end=18.dp))},colors=TopAppBarDefaults.topAppBarColors(containerColor=Color(0xFFF7F8FA))) },
+        Scaffold(topBar={ if(!graphFullscreen) TopAppBar(title={ Text(if(screen=="search") "Поиск статей" else "График",fontWeight=FontWeight.Bold,color=Ink) },actions={Text(chosen.size.toString(),color=Muted,modifier=Modifier.padding(end=18.dp))},colors=TopAppBarDefaults.topAppBarColors(containerColor=Color(0xFFF7F8FA))) },
             bottomBar={ if(!graphFullscreen) NavigationBar(containerColor=Color.White) { NavigationBarItem(selected=screen=="timeline",onClick={screen="timeline"},icon={Icon(Icons.Default.Timeline,null)},label={Text("График")}); NavigationBarItem(selected=screen=="search",onClick={screen="search"},icon={Icon(Icons.Default.Search,null)},label={Text("Поиск статей")}) } }) { pad ->
             if(showPreview && screen=="search") {
                 AlertDialog(onDismissRequest={showPreview=false},title={Text("Добавлено на график · ${chosen.size}")},text={
