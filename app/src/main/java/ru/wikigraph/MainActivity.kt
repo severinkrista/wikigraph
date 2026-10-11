@@ -386,9 +386,6 @@ class MainActivity:ComponentActivity() {
                 Text("→",fontSize=14.sp,color=Muted)
             }
         }
-        if(fullScreen && entries.isNotEmpty()) {
-            Text("Нажмите на сущность, чтобы открыть подробности",Modifier.padding(horizontal=10.dp, vertical=2.dp),fontSize=11.sp,color=Muted)
-        }
     }
 }
 @Composable private fun Label(title:String,count:String){Row(verticalAlignment=Alignment.CenterVertically){Text(title,color=Muted,fontSize=11.sp,fontWeight=FontWeight.Bold,letterSpacing=1.sp);Spacer(Modifier.width(8.dp));Text(count,color=Muted,fontSize=11.sp)}}
