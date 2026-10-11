@@ -296,7 +296,8 @@ class MainActivity:ComponentActivity() {
                         Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(12.dp)) {
                             Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) { Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink); Text(e.dates,fontSize=12.sp,color=Muted) }
-                                IconButton(onClick={chosen.remove(e);save()}) { Icon(Icons.Default.DeleteOutline,"Удалить из набора",tint=Muted) }
+                                TextButton(onClick={recommendationSeed=e;recommendations=emptyList();message="Стартовая статья выбрана: "+e.title}) { Text(if(recommendationSeed?.pageId==e.pageId) "Старт ✓" else "Старт") }
+                                IconButton(onClick={chosen.remove(e);if(recommendationSeed?.pageId==e.pageId) recommendationSeed=null;save()}) { Icon(Icons.Default.DeleteOutline,"Удалить из набора",tint=Muted) }
                             }
                         }
                     }
@@ -526,37 +527,67 @@ private object Wiki {
     }
 
     fun recommend(seed:Entry,radius:Int):List<Entry> {
-        val center=seed.start ?: seed.dateOptions.firstNotNullOfOrNull { it.start } ?: return emptyList()
+        val center=seed.start ?: seed.dateOptions.getOrNull(seed.selectedDateOption)?.start
+            ?: seed.dateOptions.firstNotNullOfOrNull { it.start } ?: return emptyList()
         val years=(center-radius..center+radius).filter { it!=center }
-        val query=years.joinToString(" OR ") { it.toString() }
-        val encoded=URLEncoder.encode("($query)","UTF-8")
-        val searchPages=json("https://ru.wikipedia.org/w/api.php?action=query&list=search&srsearch="+encoded+"&srnamespace=0&srlimit=50&format=json&utf8=1")
-            .getJSONObject("query").getJSONArray("search")
-        val candidates=(0 until searchPages.length()).map { i -> val o=searchPages.getJSONObject(i); entry(o.getString("title"),o.getInt("pageid"),o.optString("snippet")) }
-            .filter { it.pageId!=seed.pageId && it.title!=seed.title }
+        val temporal=mutableListOf<Entry>()
+        // MediaWiki search understands OR expressions; search the whole window in one request.
+        runCatching {
+            val expression=years.joinToString(" OR ") { "\"$it\"" }
+            val encoded=URLEncoder.encode(expression,"UTF-8")
+            val a=json("https://ru.wikipedia.org/w/api.php?action=query&list=search&srsearch="+encoded+
+                "&srnamespace=0&srlimit=50&format=json&utf8=1").getJSONObject("query").getJSONArray("search")
+            for(i in 0 until a.length()) {
+                val o=a.getJSONObject(i)
+                temporal.add(entry(o.optString("title"),o.optInt("pageid"),o.optString("snippet")))
+            }
+        }
         val seedCats=runCatching {
             val title=URLEncoder.encode(seed.title,"UTF-8")
-            val pages=json("https://ru.wikipedia.org/w/api.php?action=query&prop=categories&cllimit=30&titles="+title+"&format=json&utf8=1").getJSONObject("query").getJSONObject("pages")
-            val keys=pages.keys(); if(!keys.hasNext()) emptyList() else {
+            val pages=json("https://ru.wikipedia.org/w/api.php?action=query&prop=categories&cllimit=50&clshow=!hidden&titles="+title+"&format=json&utf8=1")
+                .getJSONObject("query").getJSONObject("pages")
+            val keys=pages.keys()
+            if(!keys.hasNext()) emptyList() else {
                 val cats=pages.getJSONObject(keys.next()).optJSONArray("categories") ?: org.json.JSONArray()
-                (0 until cats.length()).map { cats.getJSONObject(it).optString("title").removePrefix("Категория:").removePrefix("Category:") }.filter { !it.startsWith("Статьи с ") && !it.startsWith("Википедия:") }
+                (0 until cats.length()).map { cats.getJSONObject(it).optString("title").removePrefix("Категория:").removePrefix("Category:") }
+                    .filter { !it.startsWith("Статьи с ") && !it.startsWith("Википедия:") &&
+                        !it.startsWith("Pages with ") && !it.startsWith("Wikipedia:") }
             }
         }.getOrDefault(emptyList())
         val related=mutableListOf<Entry>()
-        seedCats.take(4).forEach { cat ->
+        seedCats.take(6).forEach { cat ->
             runCatching {
                 val title=URLEncoder.encode("Категория:"+cat,"UTF-8")
-                val pages=json("https://ru.wikipedia.org/w/api.php?action=query&generator=categorymembers&gcmtitle="+title+"&gcmtype=page&gcmnamespace=0&gcmlimit=15&prop=info&format=json&utf8=1").getJSONObject("query").optJSONObject("pages")
-                if(pages!=null) { val keys=pages.keys(); while(keys.hasNext()) { val p=pages.getJSONObject(keys.next()); related.add(entry(p.optString("title"),p.optInt("pageid"),p.optString("extract")) ) } }
+                val pages=json("https://ru.wikipedia.org/w/api.php?action=query&generator=categorymembers&gcmtitle="+title+
+                    "&gcmtype=page&gcmnamespace=0&gcmlimit=30&prop=extracts&exintro=1&explaintext=1&exchars=500&format=json&utf8=1")
+                    .getJSONObject("query").optJSONObject("pages")
+                if(pages!=null) {
+                    val keys=pages.keys()
+                    while(keys.hasNext()) {
+                        val p=pages.getJSONObject(keys.next())
+                        related.add(entry(p.optString("title"),p.optInt("pageid"),p.optString("extract")))
+                    }
+                }
             }
         }
-        val all=(related+candidates).distinctBy { it.pageId }.filter { e -> e.pageId!=seed.pageId && years.any { year -> Regex("(?<!\\d)"+Regex.escape(year.toString())+"(?!\\d)").containsMatchIn(e.title+" "+e.description) } }
-        return all.sortedWith(compareByDescending<Entry> { e ->
-            val titleAndDesc=(e.title+" "+e.description).lowercase(Locale.ROOT)
-            years.count { year -> Regex("(?<!\\d)"+Regex.escape(year.toString())+"(?!\\d)").containsMatchIn(titleAndDesc) }*3 +
-                if(related.any { it.pageId==e.pageId }) 2 else 0
-        }.thenBy { e -> kotlin.math.abs((Regex("\\d{3,4}").find(e.title)?.value?.toIntOrNull() ?: center)-center) })
-            .take(35)
+        val candidates=(related+temporal).distinctBy { it.pageId }
+            .filter { it.pageId!=seed.pageId && it.title!=seed.title }
+        val yearPattern=Regex("(?<!\\d)(\\d{1,4})(?!\\d)")
+        val ranked=candidates.map { candidate ->
+            val text=(candidate.title+" "+candidate.description).replace(Regex("<.*?>")," ")
+            val mentioned=yearPattern.findAll(text).mapNotNull { it.groupValues[1].toIntOrNull() }
+                .filter { it in (center-radius)..(center+radius) }.toList()
+            val titleYears=yearPattern.findAll(candidate.title).mapNotNull { it.groupValues[1].toIntOrNull() }
+                .filter { it in (center-radius)..(center+radius) }.toList()
+            val relatedBonus=if(related.any { it.pageId==candidate.pageId }) 2 else 0
+            val yearScore=mentioned.distinct().size*3 + titleYears.distinct().size*5
+            Triple(candidate,yearScore+relatedBonus,mentioned.minOfOrNull { kotlin.math.abs(it-center) } ?: radius+1)
+        }
+        // Prefer articles whose title/snippet explicitly mentions a year in the selected window,
+        // then related category members. Avoid flooding the user with unrelated category pages.
+        return ranked.filter { it.second>0 }
+            .sortedWith(compareByDescending<Triple<Entry,Int,Int>> { it.second }.thenBy { it.third }.thenBy { it.first.title })
+            .map { it.first }.take(35)
     }
 
     private fun articleDateOptions(text:String):List<DateOption> {
