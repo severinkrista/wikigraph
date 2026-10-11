@@ -66,6 +66,7 @@ class MainActivity:ComponentActivity() {
         }
     } }
     var query by remember { mutableStateOf("") }; var results by remember { mutableStateOf(listOf<Entry>()) }
+    var screen by remember { mutableStateOf("timeline") }
     var filter by remember { mutableStateOf("Все") }; var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }; var detail by remember { mutableStateOf<Entry?>(null) }
     val scope= rememberCoroutineScope()
@@ -73,10 +74,10 @@ class MainActivity:ComponentActivity() {
     fun search() { if(query.isBlank()) return; scope.launch { busy=true; message=""; try { results=withContext(Dispatchers.IO){ Wiki.search(query.trim()) }; if(results.isEmpty()) message="Ничего не найдено" } catch(e:Exception) { message="Ошибка загрузки. Проверьте интернет." } finally { busy=false } } }
     MaterialTheme(colorScheme=lightColorScheme(primary=Ink,secondary=Green,background=Color(0xFFF7F8FA),surface=Color.White)) {
         Scaffold(topBar={ TopAppBar(title={Column { Text("WikiGraph",fontWeight=FontWeight.Bold,color=Ink); Text("История на одной шкале",fontSize=12.sp,color=Muted) }},actions={Text(chosen.size.toString(),color=Muted,modifier=Modifier.padding(end=18.dp))},colors=TopAppBarDefaults.topAppBarColors(containerColor=Color(0xFFF7F8FA))) },
-            floatingActionButton={ ExtendedFloatingActionButton(onClick={ query="";message="Введите название в поиске выше";results=emptyList() },icon={Icon(Icons.Default.Add,null)},text={Text("Добавить")},containerColor=Ink,contentColor=Color.White) }) { pad ->
+            bottomBar={ NavigationBar(containerColor=Color.White) { NavigationBarItem(selected=screen=="timeline",onClick={screen="timeline"},icon={Icon(Icons.Default.Timeline,null)},label={Text("Шкала")}); NavigationBarItem(selected=screen=="search",onClick={screen="search"},icon={Icon(Icons.Default.Search,null)},label={Text("Поиск статей")}) } }) { pad ->
             if(detail!=null) {
                 Column(Modifier.fillMaxSize().padding(pad).padding(18.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
-                    Text("← Назад к шкале",Modifier.clickable { detail=null },color=Blue)
+                    Text("← Назад",Modifier.clickable { detail=null },color=Blue)
                     Text(detail!!.title,fontSize=26.sp,fontWeight=FontWeight.Bold,color=Ink)
                     Text(detail!!.kind.uppercase(Locale.getDefault()),color=detail!!.color)
                     Text(detail!!.dates,fontSize=22.sp,fontWeight=FontWeight.SemiBold)
@@ -84,7 +85,24 @@ class MainActivity:ComponentActivity() {
                     Button(onClick={runCatching { context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(detail!!.url))) }},modifier=Modifier.fillMaxWidth()){Text("Открыть статью в Википедии")}
                     OutlinedButton(onClick={chosen.removeAll{it.pageId==detail!!.pageId};save();detail=null},modifier=Modifier.fillMaxWidth()){Text("Убрать со шкалы")}
                 }
-            } else LazyColumn(Modifier.fillMaxSize().padding(pad),contentPadding=PaddingValues(16.dp,8.dp,16.dp,100.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            } else if(screen=="search") LazyColumn(Modifier.fillMaxSize().padding(pad),contentPadding=PaddingValues(16.dp,8.dp,16.dp,24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                item {
+                    OutlinedTextField(value=query,onValueChange={query=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("Найти в Википедии…")},leadingIcon={Icon(Icons.Default.Search,null)},trailingIcon={if(busy) CircularProgressIndicator(Modifier.size(22.dp),strokeWidth=2.dp) else IconButton(onClick={search()}){Icon(Icons.Default.Search,"Искать")}},singleLine=true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={search()}),shape=RoundedCornerShape(16.dp))
+                    if(message.isNotBlank()) Text(message,color=Muted,fontSize=12.sp,modifier=Modifier.padding(top=6.dp))
+                }
+                if(results.isNotEmpty()) { item { Label("РЕЗУЛЬТАТЫ ПОИСКА",results.size.toString()) }; items(results,key={"r"+it.pageId}) { e ->
+                    Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(14.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
+                            Box(Modifier.size(10.dp).clip(CircleShape).background(e.color))
+                            Column(Modifier.weight(1f).padding(horizontal=12.dp)) { Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink); if(e.description.isNotBlank()) Text(e.description,color=Muted,fontSize=12.sp,maxLines=2) }
+                            IconButton(onClick={if(chosen.any{it.pageId==e.pageId}) message="Уже добавлено" else scope.launch { busy=true; message="Загружаем даты из Викиданных…"; try { val full=withContext(Dispatchers.IO){Wiki.enrich(e)}; chosen.add(full); save(); message="Добавлено на шкалу" } catch(ex:Exception) { chosen.add(e); save(); message="Статья добавлена, но даты загрузить не удалось" } finally { busy=false } }}) { Icon(Icons.Default.Add,"Добавить",tint=Blue) }
+                        }
+                    }
+                } } }
+                item { Text("Выбранные статьи · ${chosen.size}",fontSize=18.sp,fontWeight=FontWeight.Bold,color=Ink) }
+                if(chosen.isEmpty()) item { Text("Добавляй статьи через поиск — даты появятся на общей шкале.",color=Muted,fontSize=13.sp) }
+                items(chosen.toList(),key={"selected-"+it.pageId}) { e -> Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(12.dp)) { Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink); Text(e.dates,fontSize=12.sp,color=Muted) }; IconButton(onClick={chosen.remove(e);save()}) { Icon(Icons.Default.DeleteOutline,"Удалить из набора",tint=Muted) } } } }
+            } else LazyColumn(Modifier.fillMaxSize().padding(pad),contentPadding=PaddingValues(16.dp,8.dp,16.dp,24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                 item {
                     OutlinedTextField(value=query,onValueChange={query=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("Найти в Википедии…")},leadingIcon={Icon(Icons.Default.Search,null)},trailingIcon={if(busy) CircularProgressIndicator(Modifier.size(22.dp),strokeWidth=2.dp) else IconButton(onClick={search()}){Icon(Icons.Default.Search,"Искать")}},singleLine=true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={search()}),shape=RoundedCornerShape(16.dp))
                     if(message.isNotBlank()) Text(message,color=Muted,fontSize=12.sp,modifier=Modifier.padding(top=6.dp))
@@ -101,7 +119,7 @@ class MainActivity:ComponentActivity() {
                 item { Row(verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Моя шкала",fontSize=22.sp,fontWeight=FontWeight.Bold,color=Ink); Text(chosen.size.toString()+" сущностей",fontSize=12.sp,color=Muted) }; Icon(Icons.Default.Timeline,null,tint=Blue) } }
                 item { Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp)) { listOf("Все","Человек","Событие","Эпоха","Сущность").forEach { f -> FilterChip(selected=filter==f,onClick={filter=f},label={Text(f)}) } } }
                 val visible=chosen.filter{filter=="Все"||it.kind==filter}.sortedBy{it.start?:Int.MAX_VALUE}
-                if(visible.isEmpty()) item { Column(Modifier.fillMaxWidth().padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally) { Icon(Icons.Default.Timeline,null,tint=Muted,modifier=Modifier.size(38.dp)); Text("Временная шкала пока пуста",color=Muted); Text("Найдите статью и нажмите +",fontSize=12.sp,color=Muted) } }
+                if(visible.isEmpty()) item { Column(Modifier.fillMaxWidth().padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally) { Icon(Icons.Default.Timeline,null,tint=Muted,modifier=Modifier.size(38.dp)); Text("Временная шкала пока пуста",color=Muted); Text("Откройте «Поиск статей» и добавьте нужные статьи",fontSize=12.sp,color=Muted) } }
                 else {
                     item { Overview(visible) }
                     items(visible,key={"s"+it.pageId}) { e ->
