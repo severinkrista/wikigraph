@@ -547,10 +547,10 @@ private object Wiki {
             runCatching {
                 val title=URLEncoder.encode("Категория:"+cat,"UTF-8")
                 val pages=json("https://ru.wikipedia.org/w/api.php?action=query&generator=categorymembers&gcmtitle="+title+"&gcmtype=page&gcmnamespace=0&gcmlimit=15&prop=info&format=json&utf8=1").getJSONObject("query").optJSONObject("pages")
-                if(pages!=null) { val keys=pages.keys(); while(keys.hasNext()) { val p=pages.getJSONObject(keys.next()); related.add(entry(p.optString("title"),p.optInt("pageid"))) } }
+                if(pages!=null) { val keys=pages.keys(); while(keys.hasNext()) { val p=pages.getJSONObject(keys.next()); related.add(entry(p.optString("title"),p.optInt("pageid"),p.optString("extract")) ) } }
             }
         }
-        val all=(related+candidates).distinctBy { it.pageId }.filter { it.pageId!=seed.pageId }
+        val all=(related+candidates).distinctBy { it.pageId }.filter { e -> e.pageId!=seed.pageId && years.any { year -> Regex("(?<!\\\\d)"+Regex.escape(year.toString())+"(?!\\\\d)").containsMatchIn(e.title+" "+e.description) } }
         return all.sortedWith(compareByDescending<Entry> { e ->
             val titleAndDesc=(e.title+" "+e.description).lowercase(Locale.ROOT)
             years.count { year -> Regex("(?<!\\d)"+Regex.escape(year.toString())+"(?!\\d)").containsMatchIn(titleAndDesc) }*3 +
