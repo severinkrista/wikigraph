@@ -112,7 +112,7 @@ class MainActivity:ComponentActivity() {
     var message by remember { mutableStateOf("") }; var detail by remember { mutableStateOf<Entry?>(null) }
     var detailTextExpanded by remember(detail?.pageId) { mutableStateOf(false) }
     var categoriesExpanded by remember(detail?.pageId) { mutableStateOf(false) }
-    var showScales by remember { mutableStateOf(false) }; var scaleName by remember { mutableStateOf("") }
+    var showScales by remember { mutableStateOf(false) }; var showHiddenEntries by remember { mutableStateOf(false) }; var scaleName by remember { mutableStateOf("") }
     var showDateOptions by remember { mutableStateOf(false) }
     var dateOptionQuery by remember { mutableStateOf("") }
     var dateOptionFilter by remember { mutableStateOf("Все") }
@@ -120,7 +120,7 @@ class MainActivity:ComponentActivity() {
     var savedScales by remember { mutableStateOf(org.json.JSONArray(prefs.getString("scales","[]"))) }
     val scope= rememberCoroutineScope()
     fun goBack() { when { showDateOptions -> showDateOptions=false; showScales -> showScales=false; showPreview -> showPreview=false; detail!=null -> detail=null; graphFullscreen -> { graphFullscreen=false; (context as? ComponentActivity)?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }; screen=="search" -> screen="timeline" } }
-    BackHandler(enabled=showDateOptions||showScales||showPreview||detail!=null||graphFullscreen||screen=="search") { goBack() }
+    BackHandler(enabled=showDateOptions||showScales||showHiddenEntries||showPreview||detail!=null||graphFullscreen||screen=="search") { if(showHiddenEntries) showHiddenEntries=false else goBack() }
     fun save() { prefs.edit().putString("entries",serializeEntries(chosen)).apply() }
     fun search() { if(query.isBlank()) { message="Введите название статьи для поиска"; return }; scope.launch { busy=true; results=emptyList(); message=""; try { results=withContext(Dispatchers.IO){ Wiki.search(query.trim()) }; if(results.isEmpty()) message="По этому запросу статьи не найдены" } catch(e:Exception) { message="Ошибка загрузки статей. Проверьте интернет." } finally { busy=false } } }
     fun loadCategories() { if(categoryQuery.isBlank()) { message="Введите тему или начало названия категории"; return }; scope.launch { categoryBusy=true; categoryHasSearched=true; browseParent=null; browseCategories=emptyList(); message=""; try { categories=withContext(Dispatchers.IO){ Wiki.searchCategories(categoryQuery) }; browseCategories=categories; if(categories.isEmpty()) message="Категории не найдены — попробуйте более короткий запрос" } catch(e:Exception) { message="Не удалось загрузить категории" } finally { categoryBusy=false } } }
@@ -145,7 +145,32 @@ class MainActivity:ComponentActivity() {
             }
         },topBar={ if(!graphFullscreen) TopAppBar(title={ Text(if(screen=="search") "Поиск статей" else "График",fontWeight=FontWeight.Bold,color=Ink) },actions={Text(chosen.size.toString(),color=Muted,modifier=Modifier.padding(end=18.dp))},colors=TopAppBarDefaults.topAppBarColors(containerColor=Color(0xFFF7F8FA))) },
             bottomBar={ if(!graphFullscreen) NavigationBar(containerColor=Color.White) { NavigationBarItem(selected=screen=="timeline",onClick={screen="timeline"},icon={Icon(Icons.Default.Timeline,null)},label={Text("График")}); NavigationBarItem(selected=screen=="search",onClick={screen="search"},icon={Icon(Icons.Default.Search,null)},label={Text("Поиск статей")}) } }) { pad ->
-            if(showScales) {
+            if(showHiddenEntries) {
+                val hiddenEntries=chosen.filter { it.hidden }.sortedBy { it.title.lowercase(Locale.ROOT) }
+                AlertDialog(
+                    onDismissRequest={showHiddenEntries=false},
+                    title={Text("Скрытые статьи ("+hiddenEntries.size+")")},
+                    text={
+                        if(hiddenEntries.isEmpty()) Text("Скрытых статей нет.")
+                        else LazyColumn(Modifier.heightIn(max=420.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                            items(hiddenEntries,key={"hidden-"+it.pageId}) { e ->
+                                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f).padding(end=8.dp)) {
+                                        Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink)
+                                        Text(e.dates,fontSize=12.sp,color=Muted)
+                                    }
+                                    TextButton(onClick={
+                                        val i=chosen.indexOfFirst { it.pageId==e.pageId }
+                                        if(i>=0) chosen[i]=chosen[i].copy(hidden=false)
+                                        save()
+                                    }) { Text("Показать") }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton={TextButton(onClick={showHiddenEntries=false}){Text("Готово")}}
+                )
+            } else if(showScales) {
                 AlertDialog(onDismissRequest={showScales=false},title={Text("Сохранённые шкалы")},text={
                     Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(value=scaleName,onValueChange={scaleName=it},label={Text("Название новой шкалы")},singleLine=true,modifier=Modifier.fillMaxWidth())
@@ -566,7 +591,13 @@ class MainActivity:ComponentActivity() {
                     }
                 }
             } else LazyColumn(Modifier.fillMaxSize().padding(pad),contentPadding=PaddingValues(16.dp,8.dp,16.dp,24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                item { Row(verticalAlignment=Alignment.CenterVertically) { Text(chosen.size.toString()+" сущностей",Modifier.weight(1f),fontSize=13.sp,color=Muted); TextButton(onClick={showScales=true}){Text("Шкалы")}; TextButton(onClick={graphCompact=!graphCompact}){Text(if(graphCompact) "Обычный вид" else "Компактно")}; TextButton(onClick={graphFullscreen=true}){Text("Развернуть")} } }
+                item { Row(verticalAlignment=Alignment.CenterVertically) {
+                    Text(chosen.size.toString()+" сущностей",Modifier.weight(1f),fontSize=13.sp,color=Muted)
+                    if(chosen.any { it.hidden }) TextButton(onClick={showHiddenEntries=true}){Text("Скрытые · "+chosen.count { it.hidden })}
+                    TextButton(onClick={showScales=true}){Text("Шкалы")}
+                    TextButton(onClick={graphCompact=!graphCompact}){Text(if(graphCompact) "Обычный вид" else "Компактно")}
+                    TextButton(onClick={graphFullscreen=true}){Text("Развернуть")}
+                } }
                 val visible=chosen.filter{!it.hidden}.sortedBy{it.start?:Int.MAX_VALUE}
                 if(visible.isEmpty()) item { Column(Modifier.fillMaxWidth().padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally) { Icon(Icons.Default.Timeline,null,tint=Muted,modifier=Modifier.size(38.dp)); Text("Временная шкала пока пуста",color=Muted); Text("Откройте «Поиск статей» и добавьте нужные статьи",fontSize=12.sp,color=Muted) } }
                 else {
@@ -580,6 +611,14 @@ class MainActivity:ComponentActivity() {
                             Row(Modifier.padding(if(graphCompact) 8.dp else 12.dp),verticalAlignment=Alignment.CenterVertically) {
                                 Column(Modifier.width(if(graphCompact) 62.dp else 75.dp),horizontalAlignment=Alignment.CenterHorizontally) { Text(e.start?.let{year(it)}?:"—",fontSize=if(graphCompact) 10.sp else 11.sp,color=Ink,fontWeight=FontWeight.SemiBold); Box(Modifier.padding(top=if(graphCompact) 3.dp else 6.dp).width(3.dp).height(if(graphCompact) 14.dp else 22.dp).background(e.color)) ; if(e.end!=null&&e.end!=e.start) Text(year(e.end),fontSize=if(graphCompact) 9.sp else 10.sp,color=Muted) }
                                 Column(Modifier.weight(1f).padding(horizontal=if(graphCompact) 5.dp else 8.dp)) { Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink,fontSize=if(graphCompact) 13.sp else 14.sp,maxLines=if(graphCompact) 1 else 2); Text(e.kind+" · "+e.dates,fontSize=if(graphCompact) 10.sp else 11.sp,color=Muted,maxLines=1); if(e.description.isNotBlank()) Text(e.description,fontSize=if(graphCompact) 11.sp else 12.sp,color=Muted,maxLines=if(graphCompact) 1 else 2) }
+                                TextButton(
+                                    onClick={
+                                        val i=chosen.indexOfFirst { it.pageId==e.pageId }
+                                        if(i>=0) chosen[i]=chosen[i].copy(hidden=true)
+                                        save()
+                                    },
+                                    contentPadding=PaddingValues(horizontal=6.dp,vertical=0.dp)
+                                ) { Text("Скрыть",fontSize=if(graphCompact) 10.sp else 12.sp) }
                                 IconButton(onClick={chosen.remove(e);save()},modifier=Modifier.size(if(graphCompact) 28.dp else 32.dp)){Icon(Icons.Default.DeleteOutline,"Убрать",tint=Muted)}
                             }
                         }
