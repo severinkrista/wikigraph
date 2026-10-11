@@ -3,16 +3,43 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Use the repository's fixed signing key for every debug APK, both locally and in GitHub Actions.
+// This avoids Android Studio's machine-specific ~/.android/debug.keystore changing the app signature.
+val stableDebugKeystoreSource = rootProject.file("ci/debug.keystore.b64")
+val stableDebugKeystore = layout.buildDirectory.file("signing/debug.keystore").get().asFile
+if (stableDebugKeystoreSource.exists()) {
+    stableDebugKeystore.parentFile.mkdirs()
+    stableDebugKeystore.writeBytes(
+        java.util.Base64.getMimeDecoder().decode(stableDebugKeystoreSource.readText())
+    )
+}
+
 android {
     namespace = "ru.wikigraph"
     compileSdk = 35
+
+    signingConfigs {
+        create("stableDebug") {
+            storeFile = stableDebugKeystore
+            storeType = "PKCS12"
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
 
     defaultConfig {
         applicationId = "ru.wikigraph"
         minSdk = 26
         targetSdk = 35
-        versionCode = 290
-        versionName = "2.9.0"
+        versionCode = 291
+        versionName = "2.9.1"
+    }
+
+    buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("stableDebug")
+        }
     }
 
     buildFeatures { compose = true }
