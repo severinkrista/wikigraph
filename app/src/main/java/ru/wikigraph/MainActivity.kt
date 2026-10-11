@@ -165,13 +165,16 @@ class MainActivity:ComponentActivity() {
     var categoriesExpanded by remember(detail?.pageId) { mutableStateOf(false) }
     var showScales by remember { mutableStateOf(false) }; var showHiddenEntries by remember { mutableStateOf(false) }; var scaleName by remember { mutableStateOf("") }
     var showDateOptions by remember { mutableStateOf(false) }
+    var showDateEditor by remember { mutableStateOf(false) }
+    var draftStartDate by remember { mutableStateOf("") }
+    var draftEndDate by remember { mutableStateOf("") }
     var dateOptionQuery by remember { mutableStateOf("") }
     var dateOptionFilter by remember { mutableStateOf("Все") }
     var dateDraftOptionIndex by remember { mutableIntStateOf(0) }
     var savedScales by remember { mutableStateOf(org.json.JSONArray(prefs.getString("scales","[]"))) }
     val scope= rememberCoroutineScope()
-    fun goBack() { when { showDateOptions -> showDateOptions=false; showScales -> showScales=false; showPreview -> showPreview=false; detail!=null -> detail=null; graphFullscreen -> { graphFullscreen=false; (context as? ComponentActivity)?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }; screen=="search" -> screen="timeline" } }
-    BackHandler(enabled=showDateOptions||showScales||showHiddenEntries||showPreview||detail!=null||graphFullscreen||screen=="search") { if(showHiddenEntries) showHiddenEntries=false else goBack() }
+    fun goBack() { when { showDateOptions -> showDateOptions=false; showDateEditor -> showDateEditor=false; showScales -> showScales=false; showPreview -> showPreview=false; detail!=null -> detail=null; graphFullscreen -> { graphFullscreen=false; (context as? ComponentActivity)?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }; screen=="search" -> screen="timeline" } }
+    BackHandler(enabled=showDateOptions||showDateEditor||showScales||showHiddenEntries||showPreview||detail!=null||graphFullscreen||screen=="search") { if(showHiddenEntries) showHiddenEntries=false else goBack() }
     fun save() { prefs.edit().putString("entries",serializeEntries(chosen)).apply() }
     fun search() { if(query.isBlank()) { message="Введите название статьи для поиска"; return }; scope.launch { busy=true; results=emptyList(); message=""; try { results=withContext(Dispatchers.IO){ Wiki.search(query.trim()) }; if(results.isEmpty()) message="По этому запросу статьи не найдены" } catch(e:Exception) { message="Ошибка загрузки статей. Проверьте интернет." } finally { busy=false } } }
     fun loadCategories() { if(categoryQuery.isBlank()) { message="Введите тему или начало названия категории"; return }; scope.launch { categoryBusy=true; categoryHasSearched=true; browseParent=null; browseCategories=emptyList(); message=""; try { categories=withContext(Dispatchers.IO){ Wiki.searchCategories(categoryQuery) }; browseCategories=categories; if(categories.isEmpty()) message="Категории не найдены — попробуйте более короткий запрос" } catch(e:Exception) { message="Не удалось загрузить категории" } finally { categoryBusy=false } } }
@@ -253,6 +256,33 @@ class MainActivity:ComponentActivity() {
                         }
                     }
                 },confirmButton={TextButton(onClick={showScales=false}){Text("Закрыть")}})
+            } else if(showDateEditor && detail!=null) {
+                val owner=detail!!
+                Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                    Text("← Назад",Modifier.clickable { showDateEditor=false }.padding(vertical=4.dp),color=Blue)
+                    Text("Точные даты события",fontSize=24.sp,fontWeight=FontWeight.Bold,color=Ink)
+                    Text(owner.title,color=Muted)
+                    Text("Можно указать год, месяц или полный день. Формат: ГГГГ, ГГГГ-ММ или ГГГГ-ММ-ДД. Если дата неизвестна, оставьте поле пустым.",fontSize=12.sp,color=Muted)
+                    OutlinedTextField(value=draftStartDate,onValueChange={draftStartDate=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Начало")},placeholder={Text("1941-06-22")})
+                    OutlinedTextField(value=draftEndDate,onValueChange={draftEndDate=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Окончание (необязательно)")},placeholder={Text("1945-05-09")})
+                    Text("Текущие даты: "+owner.dates,fontSize=13.sp,color=Muted)
+                    Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                        OutlinedButton(onClick={showDateEditor=false},modifier=Modifier.weight(1f)){Text("Отмена")}
+                        Button(onClick={
+                            val startText=if(draftStartDate.isBlank()) null else parseDateInput(draftStartDate)?.first
+                            val endText=if(draftEndDate.isBlank()) null else parseDateInput(draftEndDate)?.first
+                            val startOk=draftStartDate.isBlank() || startText!=null
+                            val endOk=draftEndDate.isBlank() || endText!=null
+                            if(!startOk || !endOk) message="Проверьте формат дат"
+                            else {
+                                val precision=listOfNotNull(if(startText!=null) parseDateInput(startText)?.second else null,if(endText!=null) parseDateInput(endText)?.second else null).minByOrNull { listOf("year","month","day").indexOf(it) } ?: "year"
+                                val updated=owner.copy(start=startText?.let { yearFromDate(it) },end=endText?.let { yearFromDate(it) },startDate=startText,endDate=endText,datePrecision=precision)
+                                val at=chosen.indexOfFirst { it.pageId==owner.pageId }; if(at>=0) chosen[at]=updated
+                                detail=updated; save(); showDateEditor=false; message="Даты сохранены"
+                            }
+                        },modifier=Modifier.weight(1f)){Text("Сохранить")}
+                    }
+                }
             } else if(showDateOptions && detail!=null) {
                 val dateOwner=detail!!
                 val dateChoices=dateOwner.dateOptions.mapIndexed { index, option -> option to index }
@@ -355,6 +385,7 @@ class MainActivity:ComponentActivity() {
                     Text(detail!!.title,fontSize=26.sp,fontWeight=FontWeight.Bold,color=Ink)
                     Text(detail!!.kind.uppercase(Locale.getDefault()),color=detail!!.color)
                     Text(detail!!.dates,fontSize=22.sp,fontWeight=FontWeight.SemiBold)
+                    OutlinedButton(onClick={draftStartDate=detail!!.startDate ?: detail!!.start?.toString().orEmpty();draftEndDate=detail!!.endDate ?: detail!!.end?.toString().orEmpty();showDateEditor=true},modifier=Modifier.fillMaxWidth()){Text("Изменить даты вручную")}
                     if(detail!!.dateOptions.size>1) OutlinedButton(onClick={dateDraftOptionIndex=detail!!.selectedDateOption.coerceIn(0,detail!!.dateOptions.lastIndex);dateOptionQuery="";dateOptionFilter="Все";showDateOptions=true},modifier=Modifier.fillMaxWidth()){Text("Выбрать дату или диапазон · ${detail!!.dateOptions.size}")}
                     if(detail!!.description.isNotBlank()) {
                         val articleText=detail!!.description.trim()
@@ -693,7 +724,7 @@ class MainActivity:ComponentActivity() {
             pulseOn=false
         }
     }
-    val timelinePoints=entries.flatMap { listOf(timelineValue(it,false),timelineValue(it,true)) }
+    val timelinePoints=entries.filter { it.start!=null || it.startDate!=null }.flatMap { listOf(timelineValue(it,false),timelineValue(it,true)) }.ifEmpty { listOf(0.0,36524.0) }
     val low=timelinePoints.minOrNull() ?: 0.0
     val high=timelinePoints.maxOrNull() ?: 36524.0
     val span=(high-low).coerceAtLeast(1.0)
@@ -801,8 +832,8 @@ class MainActivity:ComponentActivity() {
             entries.forEachIndexed { i,e ->
                 val cy=axisY+12.dp.toPx()+laneHeight.toPx()*i+laneHeight.toPx()*.5f
                 drawLine(Color(0xFFF0F2F5),androidx.compose.ui.geometry.Offset(left,cy),androidx.compose.ui.geometry.Offset(size.width-right,cy),strokeWidth=1.dp.toPx())
-                val startValue=timelineValue(e,false)
-                val endValue=timelineValue(e,true)
+                val startValue=if(e.start==null && e.startDate==null) low else timelineValue(e,false)
+                val endValue=if(e.end==null && e.endDate==null) startValue else timelineValue(e,true)
                 val x1=left+(((startValue-low)/span).toFloat())*contentWidth-pan
                 val x2=left+(((endValue-low)/span).toFloat())*contentWidth-pan
                 val pulsing=e.pageId==pulsePageId && pulseOn
@@ -1080,8 +1111,8 @@ private object Wiki {
         options.addAll(articleDateOptions(articleText))
         val primaryStart=starts.firstOrNull() ?: inception.firstOrNull() ?: birth ?: options.firstOrNull()?.start
         val primaryEnd=ends.firstOrNull() ?: dissolved.firstOrNull() ?: death
-        val primaryStartDate=startsExact.firstOrNull()?.first ?: inceptionExact.firstOrNull()?.first
-        val primaryEndDate=endsExact.firstOrNull()?.first ?: dissolvedExact.firstOrNull()?.first
+        val primaryStartDate=startsExact.firstOrNull()?.first ?: inceptionExact.firstOrNull()?.first ?: options.firstOrNull()?.startDate
+        val primaryEndDate=endsExact.firstOrNull()?.first ?: dissolvedExact.firstOrNull()?.first ?: options.firstOrNull()?.endDate
         if(primaryStart!=null && options.none { it.start==primaryStart && it.end==primaryEnd }) options.add(0,DateOption("Основной период",primaryStart,primaryEnd,primaryStartDate,primaryEndDate,startsExact.firstOrNull()?.second ?: inceptionExact.firstOrNull()?.second ?: "year"))
         val uniqueOptions=options.distinctBy { Triple(it.label,it.start,it.end) }
         val defaultIndex=uniqueOptions.indexOfFirst { it.start==primaryStart && it.end==primaryEnd && (it.startDate==primaryStartDate || primaryStartDate==null) }.coerceAtLeast(0)
