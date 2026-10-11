@@ -207,7 +207,15 @@ class MainActivity:ComponentActivity() {
                     if(detail!!.dateOptions.size>1) OutlinedButton(onClick={showDateOptions=true},modifier=Modifier.fillMaxWidth()){Text("Выбрать дату · ${detail!!.dateOptions.size} вариантов")}
                     Text(detail!!.description,color=Muted)
                     Button(onClick={runCatching { context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(detail!!.url))) }},modifier=Modifier.fillMaxWidth()){Text("Открыть статью в Википедии")}
-                    OutlinedButton(onClick={chosen.removeAll{it.pageId==detail!!.pageId};save();detail=null},modifier=Modifier.fillMaxWidth()){Text("Убрать со шкалы")}
+                    if(chosen.any { it.pageId==detail!!.pageId }) {
+                        OutlinedButton(onClick={chosen.removeAll{it.pageId==detail!!.pageId};if(recommendationSeed?.pageId==detail!!.pageId) recommendationSeed=null;save();detail=null},modifier=Modifier.fillMaxWidth()){Text("Убрать со шкалы")}
+                    } else {
+                        Button(onClick={
+                            val current=detail!!
+                            if(chosen.none { it.pageId==current.pageId }) { chosen.add(current); save(); recommendationSeed=current; recommendations=emptyList(); recommendationHasSearched=false }
+                            detail=null
+                        },modifier=Modifier.fillMaxWidth()){Text("Добавить на график")}
+                    }
                 }
             } else if(screen=="search") {
                 LazyColumn(Modifier.fillMaxSize().padding(pad),contentPadding=PaddingValues(16.dp,8.dp,16.dp,24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
@@ -283,7 +291,7 @@ class MainActivity:ComponentActivity() {
                         if(message.isNotBlank()) item { Text(message,color=Muted,fontSize=12.sp) }
                     }
                     if(searchMode=="articles" && results.isNotEmpty()) {
-                        item { Label("РЕЗУЛЬТАТЫ ПОИСКА",results.size.toString()) }
+                        item { Label("ПРЯМОЙ ПОИСК",results.size.toString()) }
                         items(results,key={ "r"+it.pageId }) { e ->
                             Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(14.dp)) {
                                 Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
@@ -301,6 +309,37 @@ class MainActivity:ComponentActivity() {
                                             finally { busy=false }
                                         }
                                     }) { Icon(Icons.Default.Add,"Добавить",tint=Blue) }
+                                }
+                            }
+                        }
+                    }
+                    if(searchMode=="articles" && recommendationHasSearched && recommendations.isNotEmpty()) {
+                        item { Spacer(Modifier.height(4.dp)); Label("РЕКОМЕНДАЦИИ · ±"+recommendationRadius+" ЛЕТ",recommendations.size.toString()) }
+                        items(recommendations,key={ "article-rec-"+it.pageId }) { e ->
+                            Card(Modifier.fillMaxWidth().clickable {
+                                scope.launch {
+                                    busy=true
+                                    try { detail=withContext(Dispatchers.IO){Wiki.enrich(e)} }
+                                    catch(ex:Exception) { detail=e; message="Не все сведения удалось загрузить" }
+                                    finally { busy=false }
+                                }
+                            },colors=CardDefaults.cardColors(containerColor=Color(0xFFFFF7E8)),shape=RoundedCornerShape(14.dp)) {
+                                Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
+                                    Box(Modifier.size(10.dp).clip(CircleShape).background(Amber))
+                                    Column(Modifier.weight(1f).padding(horizontal=12.dp)) {
+                                        Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink)
+                                        if(e.description.isNotBlank()) Text(e.description,color=Muted,fontSize=12.sp,maxLines=2)
+                                        Text("Найдено по рекомендациям",fontSize=10.sp,color=Amber)
+                                    }
+                                    IconButton(onClick={
+                                        if(chosen.any{it.pageId==e.pageId}) message="Уже добавлено"
+                                        else scope.launch {
+                                            busy=true
+                                            try { val full=withContext(Dispatchers.IO){Wiki.enrich(e)}; chosen.add(full); save(); recommendationSeed=full; message="Добавлено на график"; recommendations= recommendations.filterNot{it.pageId==e.pageId} }
+                                            catch(ex:Exception) { message="Не удалось добавить статью" }
+                                            finally { busy=false }
+                                        }
+                                    }) { Icon(Icons.Default.Add,"Добавить на график",tint=Amber) }
                                 }
                             }
                         }
@@ -324,9 +363,16 @@ class MainActivity:ComponentActivity() {
                     if(searchMode=="recommendations" && recommendationHasSearched && recommendations.isNotEmpty()) {
                         item { Label("СТАТЬИ РЯДОМ ПО ВРЕМЕНИ",recommendations.size.toString()) }
                         items(recommendations,key={ "rec-"+it.pageId }) { e ->
-                            Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(12.dp)) {
+                            Card(Modifier.fillMaxWidth().clickable {
+                                scope.launch {
+                                    busy=true
+                                    try { detail=withContext(Dispatchers.IO){Wiki.enrich(e)} }
+                                    catch(ex:Exception) { detail=e; message="Не все сведения удалось загрузить" }
+                                    finally { busy=false }
+                                }
+                            },colors=CardDefaults.cardColors(containerColor=Color(0xFFFFF7E8)),shape=RoundedCornerShape(12.dp)) {
                                 Row(Modifier.fillMaxWidth().padding(10.dp),verticalAlignment=Alignment.CenterVertically) {
-                                    Column(Modifier.weight(1f)) { Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink); if(e.description.isNotBlank()) Text(e.description,fontSize=12.sp,color=Muted,maxLines=2) }
+                                    Column(Modifier.weight(1f)) { Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink); if(e.description.isNotBlank()) Text(e.description,fontSize=12.sp,color=Muted,maxLines=2); Text("Нажмите для подробностей",fontSize=10.sp,color=Amber) }
                                     IconButton(onClick={
                                         if(chosen.any{it.pageId==e.pageId}) message="Уже добавлено"
                                         else scope.launch { busy=true; try { val full=withContext(Dispatchers.IO){Wiki.enrich(e)}; chosen.add(full); save(); message="Добавлено на шкалу"; recommendations=recommendations.filterNot{it.pageId==e.pageId} } catch(ex:Exception) { message="Не удалось добавить статью" } finally { busy=false } }
@@ -771,11 +817,13 @@ private object Wiki {
             starts.isNotEmpty() || ends.isNotEmpty() || inception.isNotEmpty() -> "Событие"
             else -> e.kind
         }
-        val desc=if(wd.isNotBlank()) runCatching {
+        val wikidataDescription=if(wd.isNotBlank()) runCatching {
             val entity=json("https://www.wikidata.org/wiki/Special:EntityData/"+wd+".json")
                 .getJSONObject("entities").getJSONObject(wd)
             entity.optJSONObject("descriptions")?.optJSONObject("ru")?.optString("value").orEmpty()
-        }.getOrDefault("").ifBlank { e.description } else e.description
+        }.getOrDefault("") else ""
+        // Prefer the Wikipedia article introduction for richer details; fall back to Wikidata.
+        val desc=articleText.ifBlank { wikidataDescription }.ifBlank { e.description }
         return e.copy(description=desc,wd=wd,start=primaryStart,end=primaryEnd,kind=kind,dateOptions=uniqueOptions,selectedDateOption=defaultIndex)
     }
 }
