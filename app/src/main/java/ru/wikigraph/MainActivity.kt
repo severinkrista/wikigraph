@@ -473,11 +473,14 @@ class MainActivity:ComponentActivity() {
             TextButton(onClick={ zoom=(zoom/1.5f).coerceAtLeast(1f); if(zoom<=1f) panFraction=0f }) { Text("−") }
             Text("${String.format(Locale.getDefault(),"%.1f",zoom)}×",fontSize=11.sp,color=Muted)
             TextButton(onClick={ zoom=(zoom*1.5f).coerceAtMost(32f) }) { Text("+") }
+            TextButton(onClick={ zoom=1f; zoomY=1f; panFraction=0f; selectedYear=null }) { Text("Сброс") }
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
             Text("В",fontSize=11.sp,color=Muted)
             TextButton(onClick={ zoomY=(zoomY/1.25f).coerceAtLeast(0.65f) }) { Text("−") }
             Text("${String.format(Locale.getDefault(),"%.1f",zoomY)}×",fontSize=11.sp,color=Muted)
             TextButton(onClick={ zoomY=(zoomY*1.25f).coerceAtMost(4f) }) { Text("+") }
-            TextButton(onClick={ zoom=1f; zoomY=1f; panFraction=0f; selectedYear=null }) { Text("↺") }
+            Text("Масштаб по вертикали",fontSize=11.sp,color=Muted)
         }
         Canvas(
             Modifier.fillMaxWidth().height(totalHeight).clip(RoundedCornerShape(14.dp))
@@ -526,7 +529,6 @@ class MainActivity:ComponentActivity() {
                                     val pan=maxPan*panFraction
                                     val ratio=((pressed[0].position.x-left+pan)/(plot*zoom)).coerceIn(0f,1f)
                                     selectedYear=(low+span*ratio).toInt()
-                                    pressed[0].consume()
                                 }
                             } else {
                                 previousSpan=null
