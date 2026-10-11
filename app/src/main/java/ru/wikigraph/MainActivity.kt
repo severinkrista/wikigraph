@@ -94,7 +94,7 @@ class MainActivity:ComponentActivity() {
                         Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
                             Box(Modifier.size(10.dp).clip(CircleShape).background(e.color))
                             Column(Modifier.weight(1f).padding(horizontal=12.dp)) { Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink); if(e.description.isNotBlank()) Text(e.description,color=Muted,fontSize=12.sp,maxLines=2) }
-                            IconButton(onClick={if(chosen.none{it.pageId==e.pageId}) {chosen.add(e);save();message="Добавлено на шкалу"} else message="Уже добавлено"}) { Icon(Icons.Default.Add,"Добавить",tint=Blue) }
+                            IconButton(onClick={if(chosen.any{it.pageId==e.pageId}) message="Уже добавлено" else scope.launch { busy=true; message="Загружаем даты из Викиданных…"; try { val full=withContext(Dispatchers.IO){Wiki.enrich(e)}; chosen.add(full); save(); message="Добавлено на шкалу" } catch(ex:Exception) { chosen.add(e); save(); message="Статья добавлена, но даты загрузить не удалось" } finally { busy=false } }}) { Icon(Icons.Default.Add,"Добавить",tint=Blue) }
                         }
                     }
                 } } }
