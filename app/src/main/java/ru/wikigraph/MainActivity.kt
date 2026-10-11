@@ -58,7 +58,7 @@ private val Amber = Color(0xFFC18A42)
 private val Muted = Color(0xFF758294)
 data class DateOption(val label:String,val start:Int?,val end:Int?)
 data class CategoryOption(val title:String,val size:Int=0)
-data class Entry(val title:String, val description:String="", val pageId:Int=0, val wd:String="", val start:Int?=null, val end:Int?=null, val kind:String="Сущность", val url:String="https://ru.wikipedia.org", val dateOptions:List<DateOption> = emptyList(), val selectedDateOption:Int = 0, val hidden:Boolean=false) {
+data class Entry(val title:String, val description:String="", val pageId:Int=0, val wd:String="", val start:Int?=null, val end:Int?=null, val kind:String="Сущность", val url:String="https://ru.wikipedia.org", val dateOptions:List<DateOption> = emptyList(), val selectedDateOption:Int = 0, val hidden:Boolean=false, val categories:List<String> = emptyList()) {
     val color get() = listOf(
         Color(0xFF557DB8), Color(0xFF328A78), Color(0xFFC18A42), Color(0xFF9A69B5),
         Color(0xFFD45D79), Color(0xFF458FBD), Color(0xFF7A9D38), Color(0xFFCC7045),
@@ -72,6 +72,7 @@ private fun serializeEntries(entries:List<Entry>):String {
         put("title",e.title); put("description",e.description); put("pageId",e.pageId); put("wd",e.wd)
         put("start",e.start?:JSONObject.NULL); put("end",e.end?:JSONObject.NULL); put("kind",e.kind); put("url",e.url)
         put("selectedDateOption",e.selectedDateOption); put("hidden",e.hidden)
+        val categoryArray=org.json.JSONArray(); e.categories.forEach { categoryArray.put(it) }; put("categories",categoryArray)
         val opts=org.json.JSONArray(); e.dateOptions.forEach { d -> opts.put(JSONObject().apply { put("label",d.label); put("start",d.start?:JSONObject.NULL); put("end",d.end?:JSONObject.NULL) }) }; put("dateOptions",opts)
     }) }
     return a.toString()
@@ -81,7 +82,7 @@ private fun parseEntries(raw:String):List<Entry> = runCatching {
     (0 until a.length()).map { i ->
         val o=a.getJSONObject(i); val opts=o.optJSONArray("dateOptions")?:org.json.JSONArray()
         val dates=(0 until opts.length()).map { j -> val d=opts.getJSONObject(j); DateOption(d.optString("label"),if(d.isNull("start")) null else d.optInt("start"),if(d.isNull("end")) null else d.optInt("end")) }
-        Entry(o.optString("title"),o.optString("description"),o.optInt("pageId"),o.optString("wd"),if(o.isNull("start")) null else o.optInt("start"),if(o.isNull("end")) null else o.optInt("end"),o.optString("kind","Сущность"),o.optString("url"),dates,o.optInt("selectedDateOption",0),o.optBoolean("hidden",false))
+        Entry(o.optString("title"),o.optString("description"),o.optInt("pageId"),o.optString("wd"),if(o.isNull("start")) null else o.optInt("start"),if(o.isNull("end")) null else o.optInt("end"),o.optString("kind","Сущность"),o.optString("url"),dates,o.optInt("selectedDateOption",0),o.optBoolean("hidden",false),(o.optJSONArray("categories")?:org.json.JSONArray()).let { a -> (0 until a.length()).map { a.optString(it) } })
     }
 }.getOrDefault(emptyList())
 private fun year(y:Int)= if(y<0) (-y).toString()+" до н. э." else if(y==0) "ок. 1 до н. э." else y.toString()
@@ -109,6 +110,8 @@ class MainActivity:ComponentActivity() {
     var filter by remember { mutableStateOf("Все") }; var busy by remember { mutableStateOf(false) }
     var pulsePageId by remember { mutableIntStateOf(-1) }; var pulseTrigger by remember { mutableIntStateOf(0) }
     var message by remember { mutableStateOf("") }; var detail by remember { mutableStateOf<Entry?>(null) }
+    var detailTextExpanded by remember(detail?.pageId) { mutableStateOf(false) }
+    var categoriesExpanded by remember(detail?.pageId) { mutableStateOf(false) }
     var showScales by remember { mutableStateOf(false) }; var scaleName by remember { mutableStateOf("") }
     var showDateOptions by remember { mutableStateOf(false) }
     var dateOptionQuery by remember { mutableStateOf("") }
@@ -272,7 +275,55 @@ class MainActivity:ComponentActivity() {
                     Text(detail!!.kind.uppercase(Locale.getDefault()),color=detail!!.color)
                     Text(detail!!.dates,fontSize=22.sp,fontWeight=FontWeight.SemiBold)
                     if(detail!!.dateOptions.size>1) OutlinedButton(onClick={dateDraftOptionIndex=detail!!.selectedDateOption.coerceIn(0,detail!!.dateOptions.lastIndex);dateOptionQuery="";dateOptionFilter="Все";showDateOptions=true},modifier=Modifier.fillMaxWidth()){Text("Выбрать дату или диапазон · ${detail!!.dateOptions.size}")}
-                    Text(detail!!.description,color=Muted)
+                    if(detail!!.description.isNotBlank()) {
+                        val articleText=detail!!.description.trim()
+                        val previewLimit=600
+                        Text(
+                            if(detailTextExpanded || articleText.length<=previewLimit) articleText else articleText.take(previewLimit).trimEnd()+"…",
+                            color=Muted
+                        )
+                        if(articleText.length>previewLimit) {
+                            TextButton(onClick={detailTextExpanded=!detailTextExpanded},modifier=Modifier.align(Alignment.Start)) {
+                                Text(if(detailTextExpanded) "Свернуть" else "Читать далее")
+                            }
+                        }
+                    }
+                    Card(
+                        modifier=Modifier.fillMaxWidth(),
+                        colors=CardDefaults.cardColors(containerColor=Color(0xFFF1F4F8)),
+                        shape=RoundedCornerShape(12.dp)
+                    ) {
+                        Column(Modifier.fillMaxWidth()) {
+                            Row(
+                                Modifier.fillMaxWidth().clickable { categoriesExpanded=!categoriesExpanded }.padding(horizontal=14.dp,vertical=12.dp),
+                                verticalAlignment=Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Категории",fontWeight=FontWeight.SemiBold,color=Ink)
+                                    Text(
+                                        if(detail!!.categories.isEmpty()) "Не найдены" else "${detail!!.categories.size} категорий",
+                                        fontSize=12.sp,color=Muted
+                                    )
+                                }
+                                Text(if(categoriesExpanded) "▲" else "▼",color=Blue)
+                            }
+                            if(categoriesExpanded) {
+                                Divider(color=Color(0xFFDCE2E9))
+                                if(detail!!.categories.isEmpty()) {
+                                    Text("Для этой статьи категории не найдены.",Modifier.padding(14.dp),fontSize=13.sp,color=Muted)
+                                } else {
+                                    Column(
+                                        Modifier.fillMaxWidth().padding(horizontal=14.dp,vertical=10.dp),
+                                        verticalArrangement=Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        detail!!.categories.forEach { category ->
+                                            Text(category,color=Ink,fontSize=13.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     Button(onClick={runCatching { context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(detail!!.url))) }},modifier=Modifier.fillMaxWidth()){Text("Открыть статью в Википедии")}
                     if(chosen.any { it.pageId==detail!!.pageId }) {
                         OutlinedButton(onClick={chosen.removeAll{it.pageId==detail!!.pageId};if(recommendationSeed?.pageId==detail!!.pageId) recommendationSeed=null;save();detail=null},modifier=Modifier.fillMaxWidth()){Text("Убрать со шкалы")}
@@ -890,12 +941,13 @@ private object Wiki {
     fun enrich(e:Entry):Entry {
         val q=URLEncoder.encode(e.title,"UTF-8")
         val pageData=runCatching {
-            val response=json("https://ru.wikipedia.org/w/api.php?action=query&prop=pageprops%7Cextracts&ppprop=wikibase_item&explaintext=1&titles="+q+"&format=json")
+            val response=json("https://ru.wikipedia.org/w/api.php?action=query&prop=pageprops%7Cextracts%7Ccategories&clshow=%21hidden&cllimit=max&ppprop=wikibase_item&explaintext=1&titles="+q+"&format=json")
             val pages=response.getJSONObject("query").getJSONObject("pages")
             val key=pages.keys().asSequence().firstOrNull()
             if(key==null) null else pages.getJSONObject(key)
         }.getOrNull()
         val articleText=pageData?.optString("extract").orEmpty()
+        val categories=pageData?.optJSONArray("categories")?.let { a -> (0 until a.length()).map { a.getJSONObject(it).optString("title").removePrefix("Категория:").removePrefix("Category:") }.distinct().sortedBy { it.lowercase(Locale.ROOT) } }.orEmpty()
         val wd=pageData?.optJSONObject("pageprops")?.optString("wikibase_item").orEmpty().let { if(it=="null") "" else it }
         val options=mutableListOf<DateOption>()
         var birth:Int?=null
@@ -958,6 +1010,6 @@ private object Wiki {
         }.getOrDefault("") else ""
         // Prefer the Wikipedia article introduction for richer details; fall back to Wikidata.
         val desc=articleText.ifBlank { wikidataDescription }.ifBlank { e.description }
-        return e.copy(description=desc,wd=wd,start=primaryStart,end=primaryEnd,kind=kind,dateOptions=uniqueOptions,selectedDateOption=defaultIndex)
+        return e.copy(description=desc,wd=wd,start=primaryStart,end=primaryEnd,kind=kind,dateOptions=uniqueOptions,selectedDateOption=defaultIndex,categories=categories)
     }
 }
