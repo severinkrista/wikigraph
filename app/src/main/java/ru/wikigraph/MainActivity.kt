@@ -538,7 +538,7 @@ private object Wiki {
             val pages=json("https://ru.wikipedia.org/w/api.php?action=query&prop=categories&cllimit=30&titles="+title+"&format=json&utf8=1").getJSONObject("query").getJSONObject("pages")
             val keys=pages.keys(); if(!keys.hasNext()) emptyList() else {
                 val cats=pages.getJSONObject(keys.next()).optJSONArray("categories") ?: org.json.JSONArray()
-                (0 until cats.length()).map { cats.getJSONObject(it).optString("title").removePrefix("Category:") }.filter { !it.startsWith("Статьи с ") && !it.startsWith("Википедия:") }
+                (0 until cats.length()).map { cats.getJSONObject(it).optString("title").removePrefix("Категория:").removePrefix("Category:") }.filter { !it.startsWith("Статьи с ") && !it.startsWith("Википедия:") }
             }
         }.getOrDefault(emptyList())
         val related=mutableListOf<Entry>()
