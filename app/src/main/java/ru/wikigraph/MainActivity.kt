@@ -8,6 +8,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.consume
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -100,9 +103,74 @@ class MainActivity:ComponentActivity() {
     fun save() { prefs.edit().putString("entries",serializeEntries(chosen)).apply() }
     fun search() { if(query.isBlank()) return; scope.launch { busy=true; message=""; try { results=withContext(Dispatchers.IO){ Wiki.search(query.trim()) }; if(results.isEmpty()) message="Ничего не найдено" } catch(e:Exception) { message="Ошибка загрузки. Проверьте интернет." } finally { busy=false } } }
     MaterialTheme(colorScheme=lightColorScheme(primary=Ink,secondary=Green,background=Color(0xFFF7F8FA),surface=Color.White)) {
-        Scaffold(topBar={ if(!graphFullscreen) TopAppBar(title={ Text(if(screen=="search") "Поиск статей" else "График",fontWeight=FontWeight.Bold,color=Ink) },actions={Text(chosen.size.toString(),color=Muted,modifier=Modifier.padding(end=18.dp))},colors=TopAppBarDefaults.topAppBarColors(containerColor=Color(0xFFF7F8FA))) },
+        Scaffold(modifier=Modifier.pointerInput(screen,detail,graphFullscreen,showPreview,showScales,showDateOptions) {
+            awaitEachGesture {
+                val down=awaitFirstDown(requireUnconsumed=false)
+                if(down.position.x<=28.dp.toPx()) {
+                    var dx=0f; var dy=0f; var pressed=true
+                    while(pressed) {
+                        val event=awaitPointerEvent()
+                        val change=event.changes.firstOrNull() ?: break
+                        dx=change.position.x-down.position.x; dy=change.position.y-down.position.y
+                        pressed=change.pressed
+                        if(dx>90.dp.toPx() && kotlin.math.abs(dx)>kotlin.math.abs(dy)*1.35f) { goBack(); change.consume(); break }
+                        if(!pressed) break
+                    }
+                }
+            }
+        },topBar={ if(!graphFullscreen) TopAppBar(title={ Text(if(screen=="search") "Поиск статей" else "График",fontWeight=FontWeight.Bold,color=Ink) },actions={Text(chosen.size.toString(),color=Muted,modifier=Modifier.padding(end=18.dp))},colors=TopAppBarDefaults.topAppBarColors(containerColor=Color(0xFFF7F8FA))) },
             bottomBar={ if(!graphFullscreen) NavigationBar(containerColor=Color.White) { NavigationBarItem(selected=screen=="timeline",onClick={screen="timeline"},icon={Icon(Icons.Default.Timeline,null)},label={Text("График")}); NavigationBarItem(selected=screen=="search",onClick={screen="search"},icon={Icon(Icons.Default.Search,null)},label={Text("Поиск статей")}) } }) { pad ->
-            if(showPreview && screen=="search") {
+            if(showScales) {
+                AlertDialog(onDismissRequest={showScales=false},title={Text("Сохранённые шкалы")},text={
+                    Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(value=scaleName,onValueChange={scaleName=it},label={Text("Название новой шкалы")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                        Button(onClick={
+                            if(scaleName.isNotBlank() && chosen.isNotEmpty()) {
+                                val all=org.json.JSONArray(prefs.getString("scales","[]"))
+                                all.put(JSONObject().apply { put("name",scaleName.trim()); put("entries",serializeEntries(chosen)); put("savedAt",System.currentTimeMillis()) })
+                                prefs.edit().putString("scales",all.toString()).apply(); savedScales=all; scaleName=""; showScales=false
+                            }
+                        },enabled=scaleName.isNotBlank()&&chosen.isNotEmpty(),modifier=Modifier.fillMaxWidth()){Text("Сохранить текущую шкалу")}
+                        if(savedScales.length()==0) Text("Сохранённых шкал пока нет.",color=Muted)
+                        else LazyColumn(Modifier.heightIn(max=300.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                            items((0 until savedScales.length()).map { savedScales.getJSONObject(it) }.reversed(),key={it.optString("savedAt")+it.optString("name")}) { scale ->
+                                Row(verticalAlignment=Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f).clickable {
+                                        chosen.clear(); chosen.addAll(parseEntries(scale.optString("entries","[]"))); save(); showScales=false; screen="timeline"
+                                    }.padding(vertical=8.dp)) {
+                                        Text(scale.optString("name"),fontWeight=FontWeight.SemiBold,color=Ink)
+                                        Text("${parseEntries(scale.optString("entries","[]")).size} сущностей",fontSize=12.sp,color=Muted)
+                                    }
+                                    IconButton(onClick={
+                                        val newer=org.json.JSONArray()
+                                        for(i in 0 until savedScales.length()) { val x=savedScales.getJSONObject(i); if(x.optString("savedAt")!=scale.optString("savedAt") || x.optString("name")!=scale.optString("name")) newer.put(x) }
+                                        prefs.edit().putString("scales",newer.toString()).apply(); savedScales=newer
+                                    }) { Icon(Icons.Default.DeleteOutline,"Удалить шкалу",tint=Muted) }
+                                }
+                            }
+                        }
+                    }
+                },confirmButton={TextButton(onClick={showScales=false}){Text("Закрыть")}})
+            } else if(showDateOptions && detail!=null) {
+                AlertDialog(onDismissRequest={showDateOptions=false},title={Text("Выбрать дату для графика")},text={
+                    if(detail!!.dateOptions.isEmpty()) Text("Для этой сущности доступна только текущая дата: ${detail!!.dates}")
+                    else LazyColumn(Modifier.heightIn(max=400.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                        items(detail!!.dateOptions) { option ->
+                            Row(Modifier.fillMaxWidth().clickable {
+                                val old=detail!!
+                                val index=old.dateOptions.indexOf(option)
+                                val updated=old.copy(start=option.start,end=option.end,selectedDateOption=index)
+                                val at=chosen.indexOfFirst { it.pageId==old.pageId }
+                                if(at>=0) chosen[at]=updated
+                                detail=updated; save(); showDateOptions=false
+                            }.padding(10.dp),verticalAlignment=Alignment.CenterVertically) {
+                                RadioButton(selected=option.start==detail!!.start && option.end==detail!!.end && detail!!.dateOptions.getOrNull(detail!!.selectedDateOption)==option,onClick=null)
+                                Column(Modifier.padding(start=8.dp)) { Text(option.label,fontWeight=FontWeight.SemiBold,color=Ink); Text(if(option.start==null) "Дата не определена" else if(option.end!=null && option.end!=option.start) "${year(option.start)} — ${year(option.end)}" else year(option.start),fontSize=12.sp,color=Muted) }
+                            }
+                        }
+                    }
+                },confirmButton={TextButton(onClick={showDateOptions=false}){Text("Готово")}})
+            } else if(showPreview && screen=="search") {
                 AlertDialog(onDismissRequest={showPreview=false},title={Text("Добавлено на график · ${chosen.size}")},text={
                     if(chosen.isEmpty()) Text("Пока ничего не выбрано.")
                     else LazyColumn(Modifier.heightIn(max=420.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -121,6 +189,7 @@ class MainActivity:ComponentActivity() {
                     Text(detail!!.title,fontSize=26.sp,fontWeight=FontWeight.Bold,color=Ink)
                     Text(detail!!.kind.uppercase(Locale.getDefault()),color=detail!!.color)
                     Text(detail!!.dates,fontSize=22.sp,fontWeight=FontWeight.SemiBold)
+                    if(detail!!.dateOptions.size>1) OutlinedButton(onClick={showDateOptions=true},modifier=Modifier.fillMaxWidth()){Text("Выбрать дату · ${detail!!.dateOptions.size} вариантов")}
                     Text(detail!!.description,color=Muted)
                     Button(onClick={runCatching { context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(detail!!.url))) }},modifier=Modifier.fillMaxWidth()){Text("Открыть статью в Википедии")}
                     OutlinedButton(onClick={chosen.removeAll{it.pageId==detail!!.pageId};save();detail=null},modifier=Modifier.fillMaxWidth()){Text("Убрать со шкалы")}
@@ -175,7 +244,7 @@ class MainActivity:ComponentActivity() {
                 val visible=chosen.filter{filter=="Все"||it.kind==filter}.sortedBy{it.start?:Int.MAX_VALUE}
                 Column(Modifier.fillMaxSize()) {
                     Row(Modifier.fillMaxWidth().padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically) {
-                        Text("WikiGraph · ${visible.size} сущностей",Modifier.weight(1f),fontWeight=FontWeight.Bold,color=Ink)
+                        Text("${visible.size} сущностей",Modifier.weight(1f),fontWeight=FontWeight.Bold,color=Ink)
                         TextButton(onClick={graphOrientation=if(graphOrientation=="vertical") "horizontal" else "vertical"; (context as? ComponentActivity)?.requestedOrientation=if(graphOrientation=="horizontal") ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT}) { Text(if(graphOrientation=="vertical") "Альбомная" else "Книжная") }
                         TextButton(onClick={graphFullscreen=false;(context as? ComponentActivity)?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED}) { Text("Закрыть") }
                     }
@@ -183,7 +252,7 @@ class MainActivity:ComponentActivity() {
                     else HistoricalGraph(visible,Modifier.fillMaxWidth().weight(1f),onSelect={detail=it},fullScreen=true)
                 }
             } else LazyColumn(Modifier.fillMaxSize().padding(pad),contentPadding=PaddingValues(16.dp,8.dp,16.dp,24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                item { Row(verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Исторический график",fontSize=22.sp,fontWeight=FontWeight.Bold,color=Ink); Text(chosen.size.toString()+" сущностей · время по X",fontSize=12.sp,color=Muted) }; TextButton(onClick={graphFullscreen=true}){Text("На весь экран")} } }
+                item { Row(verticalAlignment=Alignment.CenterVertically) { Text(chosen.size.toString()+" сущностей",Modifier.weight(1f),fontSize=13.sp,color=Muted); TextButton(onClick={showScales=true}){Text("Шкалы")}; TextButton(onClick={graphFullscreen=true}){Text("Развернуть")} } }
                 item { Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp)) { listOf("Все","Человек","Событие","Эпоха","Сущность").forEach { f -> FilterChip(selected=filter==f,onClick={filter=f},label={Text(f)}) } } }
                 val visible=chosen.filter{filter=="Все"||it.kind==filter}.sortedBy{it.start?:Int.MAX_VALUE}
                 if(visible.isEmpty()) item { Column(Modifier.fillMaxWidth().padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally) { Icon(Icons.Default.Timeline,null,tint=Muted,modifier=Modifier.size(38.dp)); Text("Временная шкала пока пуста",color=Muted); Text("Откройте «Поиск статей» и добавьте нужные статьи",fontSize=12.sp,color=Muted) } }
