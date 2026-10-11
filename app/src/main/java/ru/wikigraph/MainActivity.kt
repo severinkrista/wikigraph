@@ -550,7 +550,7 @@ private object Wiki {
                 if(pages!=null) { val keys=pages.keys(); while(keys.hasNext()) { val p=pages.getJSONObject(keys.next()); related.add(entry(p.optString("title"),p.optInt("pageid"),p.optString("extract")) ) } }
             }
         }
-        val all=(related+candidates).distinctBy { it.pageId }.filter { e -> e.pageId!=seed.pageId && years.any { year -> Regex("(?<!\\\\d)"+Regex.escape(year.toString())+"(?!\\\\d)").containsMatchIn(e.title+" "+e.description) } }
+        val all=(related+candidates).distinctBy { it.pageId }.filter { e -> e.pageId!=seed.pageId && years.any { year -> Regex("(?<!\\d)"+Regex.escape(year.toString())+"(?!\\d)").containsMatchIn(e.title+" "+e.description) } }
         return all.sortedWith(compareByDescending<Entry> { e ->
             val titleAndDesc=(e.title+" "+e.description).lowercase(Locale.ROOT)
             years.count { year -> Regex("(?<!\\d)"+Regex.escape(year.toString())+"(?!\\d)").containsMatchIn(titleAndDesc) }*3 +
