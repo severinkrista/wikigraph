@@ -1076,7 +1076,7 @@ private object Wiki {
         val covered=mutableSetOf<IntRange>()
         // Preserve full precision when an article writes dates numerically (22.06.1941)
         // or in ISO format (1941-06-22), including event ranges.
-        val numericRange=Regex("(?<!\\\\d)(\\\\d{1,2})[./](\\\\d{1,2})[./](\\\\d{4})\\\\s*(?:—|–|−|\\\\s-\\\\s)\\\\s*(\\\\d{1,2})[./](\\\\d{1,2})[./](\\\\d{4})(?!\\\\d)")
+        val numericRange=Regex("(?<!\\d)(\\d{1,2})[./](\\d{1,2})[./](\\d{4})\\s*(?:—|–|−|\\s-\\s)\\s*(\\d{1,2})[./](\\d{1,2})[./](\\d{4})(?!\\d)")
         numericRange.findAll(normalized).forEach { m ->
             val start=runCatching { LocalDate.of(m.groupValues[3].toInt(),m.groupValues[2].toInt(),m.groupValues[1].toInt()).toString() }.getOrNull()
             val end=runCatching { LocalDate.of(m.groupValues[6].toInt(),m.groupValues[5].toInt(),m.groupValues[4].toInt()).toString() }.getOrNull()
@@ -1085,7 +1085,7 @@ private object Wiki {
                 covered.add(m.range)
             }
         }
-        val isoRange=Regex("(?<!\\\\d)(\\\\d{4}-\\\\d{2}-\\\\d{2})\\\\s*(?:—|–|−|\\\\s-\\\\s)\\\\s*(\\\\d{4}-\\\\d{2}-\\\\d{2})(?!\\\\d)")
+        val isoRange=Regex("(?<!\\d)(\\d{4}-\\d{2}-\\d{2})\\s*(?:—|–|−|\\s-\\s)\\s*(\\d{4}-\\d{2}-\\d{2})(?!\\d)")
         isoRange.findAll(normalized).forEach { m ->
             val start=runCatching { LocalDate.parse(m.groupValues[1]).toString() }.getOrNull()
             val end=runCatching { LocalDate.parse(m.groupValues[2]).toString() }.getOrNull()
@@ -1094,7 +1094,7 @@ private object Wiki {
                 covered.add(m.range)
             }
         }
-        val numericSingle=Regex("(?<!\\\\d)(\\\\d{1,2})[./](\\\\d{1,2})[./](\\\\d{4})(?!\\\\d)")
+        val numericSingle=Regex("(?<!\\d)(\\d{1,2})[./](\\d{1,2})[./](\\d{4})(?!\\d)")
         numericSingle.findAll(normalized).forEach { m ->
             val date=runCatching { LocalDate.of(m.groupValues[3].toInt(),m.groupValues[2].toInt(),m.groupValues[1].toInt()).toString() }.getOrNull()
             if(date!=null) {
@@ -1102,7 +1102,7 @@ private object Wiki {
                 covered.add(m.range)
             }
         }
-        val isoSingle=Regex("(?<!\\\\d)(\\\\d{4}-\\\\d{2}-\\\\d{2})(?!\\\\d)")
+        val isoSingle=Regex("(?<!\\d)(\\d{4}-\\d{2}-\\d{2})(?!\\d)")
         isoSingle.findAll(normalized).forEach { m ->
             val date=runCatching { LocalDate.parse(m.groupValues[1]).toString() }.getOrNull()
             if(date!=null) {
