@@ -219,7 +219,7 @@ class MainActivity:ComponentActivity() {
                 }
             }
         },topBar={ if(screen!="timeline" && !graphFullscreen) TopAppBar(title={ Text(when { detail!=null -> "Карточка сущности"; screen=="manage" -> "Управление сущностями"; screen=="search" -> "Поиск сущностей"; else -> "График" },fontWeight=FontWeight.Bold,color=Ink) },navigationIcon={ IconButton(onClick={goBack()}) { Icon(Icons.Default.Timeline,"Назад") } },actions={Text(chosen.size.toString(),color=Muted,modifier=Modifier.padding(end=18.dp))},colors=TopAppBarDefaults.topAppBarColors(containerColor=Color(0xFFF7F8FA))) },
-            bottomBar={ if(!graphFullscreen) NavigationBar(containerColor=Color.White) { NavigationBarItem(selected=screen=="timeline",onClick={if(screen=="timeline"){showGraphControls=!showGraphControls;if(!showGraphControls&&!pinGraphControls) showEntityOverlay=false}else{screen="timeline"}},icon={Icon(Icons.Default.Timeline,null)},label={Text("График")}); NavigationBarItem(selected=screen=="search",onClick={screen="search";detail=null},icon={Icon(Icons.Default.Search,null)},label={Text("Поиск")}); NavigationBarItem(selected=screen=="manage",onClick={screen="manage";detail=null},icon={Icon(Icons.Default.Visibility,null)},label={Text("Сущности")}) } }) { pad ->
+            bottomBar={ if(!graphFullscreen) NavigationBar(containerColor=Color.White) { NavigationBarItem(selected=screen=="timeline",onClick={if(screen=="timeline"){val open=!(showGraphControls||showEntityOverlay);showGraphControls=open;showEntityOverlay=open}else{screen="timeline";showGraphControls=true;showEntityOverlay=true}},icon={Icon(Icons.Default.Timeline,null)},label={Text("График")}); NavigationBarItem(selected=screen=="search",onClick={screen="search";detail=null},icon={Icon(Icons.Default.Search,null)},label={Text("Поиск")}); NavigationBarItem(selected=screen=="manage",onClick={screen="manage";detail=null},icon={Icon(Icons.Default.Visibility,null)},label={Text("Сущности")}) } }) { pad ->
             if(showHiddenEntries) {
                 val hiddenEntries=chosen.filter { it.hidden }.sortedBy { it.title.lowercase(Locale.ROOT) }
                 AlertDialog(
@@ -805,6 +805,7 @@ class MainActivity:ComponentActivity() {
         zoom=nextZoom
         panFraction=if(maxPan<=0.0) 0f else (desiredLeft/maxPan).toFloat().coerceIn(0f,1f)
     }
+    val graphVerticalScroll = rememberScrollState()
     Column(modifier) {
         Row(Modifier.fillMaxWidth().padding(horizontal=6.dp, vertical=2.dp), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.spacedBy(2.dp)) {
             Text(when { span/zoom.toDouble()<100.0 -> "Д"; span/zoom.toDouble()<900.0 -> "М"; else -> "Г" },fontSize=11.sp,color=Muted,fontWeight=FontWeight.SemiBold)
@@ -825,8 +826,9 @@ class MainActivity:ComponentActivity() {
             FilterChip(selected=span/zoom.toDouble() in 100.0..<900.0,onClick={setTimeScale(365.2425)},label={Text("Месяцы",fontSize=11.sp)},modifier=Modifier.height(30.dp))
             FilterChip(selected=span/zoom.toDouble()<100.0,onClick={setTimeScale(30.0)},label={Text("Дни",fontSize=11.sp)},modifier=Modifier.height(30.dp))
         }
+        Box(Modifier.weight(1f).fillMaxWidth()) {
         Canvas(
-            Modifier.fillMaxWidth().height(totalHeight).clip(RoundedCornerShape(14.dp))
+            Modifier.fillMaxWidth().verticalScroll(graphVerticalScroll).height(totalHeight).clip(RoundedCornerShape(14.dp))
                 .background(Color.White)
                 .pointerInput(entries) {
                     awaitEachGesture {
@@ -941,6 +943,27 @@ class MainActivity:ComponentActivity() {
                     drawContext.canvas.nativeCanvas.drawText(text,cx,14.dp.toPx(),p)
                 }
             }
+        }
+        Canvas(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(22.dp).background(Color.White)) {
+            val left=88.dp.toPx()
+            val right=12.dp.toPx()
+            val plotWidth=(size.width-left-right).coerceAtLeast(1f)
+            val contentWidth=plotWidth*zoom
+            val maxPan=(contentWidth-plotWidth).coerceAtLeast(0f)
+            val pan=maxPan*panFraction
+            val visibleStart=low+span*(pan/contentWidth.coerceAtLeast(1f)).toDouble()
+            val visibleSpan=span/zoom.toDouble()
+            val tickPaint=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                color=android.graphics.Color.rgb(117,130,148); textSize=10.sp.toPx(); textAlign=android.graphics.Paint.Align.CENTER
+            }
+            drawRect(Color.White,topLeft=androidx.compose.ui.geometry.Offset.Zero,size=size)
+            for(i in 0..4) {
+                val x=left+plotWidth*i/4
+                val tick=visibleStart+visibleSpan*i/4
+                drawLine(Color(0xFFDCE2E9),androidx.compose.ui.geometry.Offset(x,17.dp.toPx()),androidx.compose.ui.geometry.Offset(x,size.height),strokeWidth=1.dp.toPx())
+                drawContext.canvas.nativeCanvas.drawText(axisDate(tick,visibleSpan),x,14.dp.toPx(),tickPaint)
+            }
+        }
         }
         if(zoom>1f) {
             Row(Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=2.dp),verticalAlignment=Alignment.CenterVertically) {
