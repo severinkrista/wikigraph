@@ -431,10 +431,10 @@ class MainActivity:ComponentActivity() {
                     } }
                     items(visible,key={"s"+it.pageId}) { e ->
                         Card(Modifier.fillMaxWidth().clickable{detail=e},colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(15.dp)) {
-                            Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
-                                Column(Modifier.width(75.dp),horizontalAlignment=Alignment.CenterHorizontally) { Text(e.start?.let{year(it)}?:"—",fontSize=11.sp,color=Ink,fontWeight=FontWeight.SemiBold); Box(Modifier.padding(top=6.dp).width(3.dp).height(22.dp).background(e.color)) ; if(e.end!=null&&e.end!=e.start) Text(year(e.end),fontSize=10.sp,color=Muted) }
-                                Column(Modifier.weight(1f).padding(horizontal=8.dp)) { Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink); Text(e.kind+" · "+e.dates,fontSize=11.sp,color=Muted); if(e.description.isNotBlank()) Text(e.description,fontSize=12.sp,color=Muted,maxLines=2) }
-                                IconButton(onClick={chosen.remove(e);save()},modifier=Modifier.size(32.dp)){Icon(Icons.Default.DeleteOutline,"Убрать",tint=Muted)}
+                            Row(Modifier.padding(if(graphCompact) 8.dp else 12.dp),verticalAlignment=Alignment.CenterVertically) {
+                                Column(Modifier.width(if(graphCompact) 62.dp else 75.dp),horizontalAlignment=Alignment.CenterHorizontally) { Text(e.start?.let{year(it)}?:"—",fontSize=if(graphCompact) 10.sp else 11.sp,color=Ink,fontWeight=FontWeight.SemiBold); Box(Modifier.padding(top=if(graphCompact) 3.dp else 6.dp).width(3.dp).height(if(graphCompact) 14.dp else 22.dp).background(e.color)) ; if(e.end!=null&&e.end!=e.start) Text(year(e.end),fontSize=if(graphCompact) 9.sp else 10.sp,color=Muted) }
+                                Column(Modifier.weight(1f).padding(horizontal=if(graphCompact) 5.dp else 8.dp)) { Text(e.title,fontWeight=FontWeight.SemiBold,color=Ink,fontSize=if(graphCompact) 13.sp else 14.sp,maxLines=if(graphCompact) 1 else 2); Text(e.kind+" · "+e.dates,fontSize=if(graphCompact) 10.sp else 11.sp,color=Muted,maxLines=1); if(e.description.isNotBlank()) Text(e.description,fontSize=if(graphCompact) 11.sp else 12.sp,color=Muted,maxLines=if(graphCompact) 1 else 2) }
+                                IconButton(onClick={chosen.remove(e);save()},modifier=Modifier.size(if(graphCompact) 28.dp else 32.dp)){Icon(Icons.Default.DeleteOutline,"Убрать",tint=Muted)}
                             }
                         }
                     }
