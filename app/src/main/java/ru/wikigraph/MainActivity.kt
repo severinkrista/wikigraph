@@ -725,7 +725,9 @@ class MainActivity:ComponentActivity() {
                         Text("Временная шкала пока пуста",color=Ink,fontWeight=FontWeight.SemiBold)
                         Text("Откройте поиск и добавьте нужные статьи",fontSize=12.sp,color=Muted)
                         Button(onClick={screen="search"}) { Text("Найти сущности") }
-                    } else Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    } else Box(Modifier.fillMaxSize()) {
+                        // Keep the graph viewport fixed. Only the lanes inside HistoricalGraph scroll,
+                        // so its date ruler remains anchored to the top of the visible screen.
                         HistoricalGraph(visible,Modifier.fillMaxSize(),onSelect={detail=it;screen="manage"},fullScreen=true,compact=graphCompact,pulsePageId=pulsePageId,pulseTrigger=pulseTrigger)
                     }
                     if(showGraphControls || pinGraphControls) {
