@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -643,6 +644,8 @@ class MainActivity:ComponentActivity() {
             val right=12.dp.toPx()
             val axisY=22.dp.toPx()
             val plotWidth=(size.width-left-right).coerceAtLeast(1f)
+            drawRect(Color.White,topLeft=androidx.compose.ui.geometry.Offset.Zero,size=androidx.compose.ui.geometry.Size(left,size.height))
+            drawRect(Color.White,topLeft=androidx.compose.ui.geometry.Offset(left,0f),size=androidx.compose.ui.geometry.Size(size.width-left,axisY))
             val contentWidth=plotWidth*zoom
             val maxPan=(contentWidth-plotWidth).coerceAtLeast(0f)
             val pan=maxPan*panFraction
