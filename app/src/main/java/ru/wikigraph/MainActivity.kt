@@ -772,6 +772,7 @@ class MainActivity:ComponentActivity() {
             }
         }
     }
+}
 @Composable private fun HistoricalGraph(entries:List<Entry>,modifier:Modifier=Modifier,onSelect:(Entry)->Unit,fullScreen:Boolean,compact:Boolean=false,pulsePageId:Int?=null,pulseTrigger:Int=0) {
     var pulseOn by remember { mutableStateOf(false) }
     LaunchedEffect(pulseTrigger,pulsePageId) {
