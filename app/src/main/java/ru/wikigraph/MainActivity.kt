@@ -63,7 +63,7 @@ private val Amber = Color(0xFFC18A42)
 private val Muted = Color(0xFF758294)
 data class DateOption(val label:String,val start:Int?,val end:Int?,val startDate:String?=null,val endDate:String?=null,val precision:String="year")
 data class CategoryOption(val title:String,val size:Int=0)
-data class Entry(val title:String, val description:String="", val pageId:Int=0, val wd:String="", val start:Int?=null, val end:Int?=null, val kind:String="Сущность", val url:String="https://ru.wikipedia.org", val dateOptions:List<DateOption> = emptyList(), val selectedDateOption:Int = 0, val hidden:Boolean=false, val categories:List<String> = emptyList(), val startDate:String?=null, val endDate:String?=null, val datePrecision:String="year", val selectedDateOptions:List<Int> = emptyList()) {
+data class Entry(val title:String, val description:String="", val pageId:Int=0, val wd:String="", val start:Int?=null, val end:Int?=null, val kind:String="Сущность", val url:String="https://ru.wikipedia.org", val dateOptions:List<DateOption> = emptyList(), val selectedDateOption:Int = 0, val hidden:Boolean=false, val categories:List<String> = emptyList(), val startDate:String?=null, val endDate:String?=null, val datePrecision:String="year", val selectedDateOptions:List<Int> = emptyList(), val allDatesOneLine:Boolean=true) {
     val color get() = listOf(
         Color(0xFF557DB8), Color(0xFF328A78), Color(0xFFC18A42), Color(0xFF9A69B5),
         Color(0xFFD45D79), Color(0xFF458FBD), Color(0xFF7A9D38), Color(0xFFCC7045),
@@ -138,7 +138,7 @@ private fun serializeEntries(entries:List<Entry>):String {
     entries.forEach { e -> a.put(JSONObject().apply {
         put("title",e.title); put("description",e.description); put("pageId",e.pageId); put("wd",e.wd)
         put("start",e.start?:JSONObject.NULL); put("end",e.end?:JSONObject.NULL); put("startDate",e.startDate?:JSONObject.NULL); put("endDate",e.endDate?:JSONObject.NULL); put("datePrecision",e.datePrecision); put("kind",e.kind); put("url",e.url)
-        put("selectedDateOption",e.selectedDateOption); val selectedOptions=org.json.JSONArray(); e.selectedDateOptions.forEach { selectedOptions.put(it) }; put("selectedDateOptions",selectedOptions); put("hidden",e.hidden)
+        put("selectedDateOption",e.selectedDateOption); val selectedOptions=org.json.JSONArray(); e.selectedDateOptions.forEach { selectedOptions.put(it) }; put("selectedDateOptions",selectedOptions); put("allDatesOneLine",e.allDatesOneLine); put("hidden",e.hidden)
         val categoryArray=org.json.JSONArray(); e.categories.forEach { categoryArray.put(it) }; put("categories",categoryArray)
         val opts=org.json.JSONArray(); e.dateOptions.forEach { d -> opts.put(JSONObject().apply { put("label",d.label); put("start",d.start?:JSONObject.NULL); put("end",d.end?:JSONObject.NULL); put("startDate",d.startDate?:JSONObject.NULL); put("endDate",d.endDate?:JSONObject.NULL); put("precision",d.precision) }) }; put("dateOptions",opts)
     }) }
@@ -153,7 +153,7 @@ private fun parseEntries(raw:String):List<Entry> = runCatching {
         val legacyEnd=if(o.isNull("end")) null else o.optInt("end")
         val storedStartDate=if(o.isNull("startDate")) legacyStart?.toString() else o.optString("startDate")
         val storedEndDate=if(o.isNull("endDate")) legacyEnd?.toString() else o.optString("endDate")
-        Entry(o.optString("title"),o.optString("description"),o.optInt("pageId"),o.optString("wd"),legacyStart,legacyEnd,o.optString("kind","Сущность"),o.optString("url"),dates,o.optInt("selectedDateOption",0),o.optBoolean("hidden",false),(o.optJSONArray("categories")?:org.json.JSONArray()).let { a -> (0 until a.length()).map { a.optString(it) } },storedStartDate,storedEndDate,o.optString("datePrecision","year"),(o.optJSONArray("selectedDateOptions")?:org.json.JSONArray()).let { a -> (0 until a.length()).map { a.optInt(it) }.filter { it in dates.indices } })
+        Entry(o.optString("title"),o.optString("description"),o.optInt("pageId"),o.optString("wd"),legacyStart,legacyEnd,o.optString("kind","Сущность"),o.optString("url"),dates,o.optInt("selectedDateOption",0),o.optBoolean("hidden",false),(o.optJSONArray("categories")?:org.json.JSONArray()).let { a -> (0 until a.length()).map { a.optString(it) } },storedStartDate,storedEndDate,o.optString("datePrecision","year"),(o.optJSONArray("selectedDateOptions")?:org.json.JSONArray()).let { a -> (0 until a.length()).map { a.optInt(it) }.filter { it in dates.indices } },o.optBoolean("allDatesOneLine",true))
     }
 }.getOrDefault(emptyList())
 private fun year(y:Int)= if(y<0) (-y).toString()+" до н. э." else if(y==0) "ок. 1 до н. э." else y.toString()
@@ -219,7 +219,7 @@ class MainActivity:ComponentActivity() {
                 }
             }
         },topBar={ if(screen!="timeline" && !graphFullscreen) TopAppBar(title={ Text(when { detail!=null -> "Карточка сущности"; screen=="manage" -> "Управление сущностями"; screen=="search" -> "Поиск сущностей"; else -> "График" },fontWeight=FontWeight.Bold,color=Ink) },navigationIcon={ IconButton(onClick={goBack()}) { Icon(Icons.Default.Timeline,"Назад") } },actions={Text(chosen.size.toString(),color=Muted,modifier=Modifier.padding(end=18.dp))},colors=TopAppBarDefaults.topAppBarColors(containerColor=Color(0xFFF7F8FA))) },
-            bottomBar={ if(!graphFullscreen) NavigationBar(containerColor=Color.White) { NavigationBarItem(selected=screen=="timeline",onClick={screen="timeline";showGraphControls=true;showEntityOverlay=true},icon={Icon(Icons.Default.Timeline,null)},label={Text("График")}); NavigationBarItem(selected=screen=="search",onClick={screen="search";detail=null},icon={Icon(Icons.Default.Search,null)},label={Text("Поиск")}); NavigationBarItem(selected=screen=="manage",onClick={screen="manage";detail=null},icon={Icon(Icons.Default.Visibility,null)},label={Text("Сущности")}) } }) { pad ->
+            bottomBar={ if(!graphFullscreen) NavigationBar(containerColor=Color.White) { NavigationBarItem(selected=screen=="timeline",onClick={screen="timeline";detail=null;val panelsVisible=showGraphControls||pinGraphControls||showEntityOverlay||pinEntityOverlay;if(panelsVisible){showGraphControls=false;pinGraphControls=false;showEntityOverlay=false;pinEntityOverlay=false}else{showGraphControls=true;showEntityOverlay=true}},icon={Icon(Icons.Default.Timeline,null)},label={Text("График")}); NavigationBarItem(selected=screen=="search",onClick={screen="search";detail=null},icon={Icon(Icons.Default.Search,null)},label={Text("Поиск")}); NavigationBarItem(selected=screen=="manage",onClick={screen="manage";detail=null},icon={Icon(Icons.Default.Visibility,null)},label={Text("Сущности")}) } }) { pad ->
             if(showHiddenEntries) {
                 val hiddenEntries=chosen.filter { it.hidden }.sortedBy { it.title.lowercase(Locale.ROOT) }
                 AlertDialog(
@@ -414,6 +414,21 @@ class MainActivity:ComponentActivity() {
                     }
                     Text(precisionText,fontSize=12.sp,color=Muted)
                     OutlinedButton(onClick={draftStartDate=detail!!.startDate ?: detail!!.start?.toString().orEmpty();draftEndDate=detail!!.endDate ?: detail!!.end?.toString().orEmpty();showDateEditor=true},modifier=Modifier.fillMaxWidth()){Text("Изменить даты вручную")}
+                    Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color(0xFFF1F4F8)),shape=RoundedCornerShape(12.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal=14.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("В одну линию все даты",fontWeight=FontWeight.SemiBold,color=Ink)
+                                Text(if(detail!!.allDatesOneLine) "Даты статьи на общей линии" else "Каждая дата или диапазон на отдельной линии",fontSize=12.sp,color=Muted)
+                            }
+                            Switch(checked=detail!!.allDatesOneLine,onCheckedChange={checked ->
+                                val updated=detail!!.copy(allDatesOneLine=checked)
+                                detail=updated
+                                val index=chosen.indexOfFirst { it.pageId==updated.pageId }
+                                if(index>=0) chosen[index]=updated
+                                save()
+                            })
+                        }
+                    }
                     if(detail!!.dateOptions.size>1) OutlinedButton(onClick={dateDraftOptionIndex=detail!!.selectedDateOption.coerceIn(0,detail!!.dateOptions.lastIndex);dateDraftOptionIndices=if(detail!!.selectedDateOptions.isNotEmpty()) detail!!.selectedDateOptions.toSet() else setOf(detail!!.selectedDateOption.coerceIn(0,detail!!.dateOptions.lastIndex));dateOptionQuery="";dateOptionFilter="Все";showDateOptions=true},modifier=Modifier.fillMaxWidth()){Text("Выбрать даты для графика · ${detail!!.dateOptions.size}")}
                     if(detail!!.description.isNotBlank()) {
                         val articleText=detail!!.description.trim()
@@ -736,7 +751,7 @@ class MainActivity:ComponentActivity() {
                                 Row(verticalAlignment=Alignment.CenterVertically) {
                                     Text("Параметры графика",Modifier.weight(1f),fontWeight=FontWeight.SemiBold,color=Ink,fontSize=13.sp)
                                     IconButton(onClick={pinGraphControls=!pinGraphControls},modifier=Modifier.size(34.dp)) { Icon(Icons.Default.Timeline,if(pinGraphControls) "Открепить панель" else "Закрепить панель",tint=if(pinGraphControls) Blue else Muted) }
-                                    IconButton(onClick={showGraphControls=false;pinGraphControls=false;showEntityOverlay=false;pinEntityOverlay=false},modifier=Modifier.size(34.dp)) { Icon(Icons.Default.VisibilityOff,"Скрыть панели",tint=Muted) }
+                                    IconButton(onClick={showGraphControls=false;pinGraphControls=false},modifier=Modifier.size(34.dp)) { Icon(Icons.Default.VisibilityOff,"Скрыть панель управления графиком",tint=Muted) }
                                 }
                                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(4.dp),verticalAlignment=Alignment.CenterVertically) {
                                     TextButton(onClick={showEntityOverlay=!showEntityOverlay}) { Text(if(showEntityOverlay) "Скрыть список" else "Список · ${chosen.size}") }
@@ -783,7 +798,8 @@ class MainActivity:ComponentActivity() {
             pulseOn=false
         }
     }
-    val graphEntries=entries.flatMap { plottedEntries(it) }; val timelinePoints=graphEntries.filter { it.start!=null || it.startDate!=null }.flatMap { listOf(timelineValue(it,false),timelineValue(it,true)) }.ifEmpty { listOf(0.0,36524.0) }
+    val displayEntries=entries.flatMap { e -> if(!e.allDatesOneLine && e.selectedDateOptions.distinct().size>1) plottedEntries(e) else listOf(e) }
+    val graphEntries=displayEntries.flatMap { plottedEntries(it) }; val timelinePoints=graphEntries.filter { it.start!=null || it.startDate!=null }.flatMap { listOf(timelineValue(it,false),timelineValue(it,true)) }.ifEmpty { listOf(0.0,36524.0) }
     val rawLow=timelinePoints.minOrNull() ?: 0.0
     val rawHigh=timelinePoints.maxOrNull() ?: 36524.0
     val rawSpan=(rawHigh-rawLow).coerceAtLeast(1.0)
@@ -795,7 +811,7 @@ class MainActivity:ComponentActivity() {
     var zoom by remember(entries) { mutableStateOf(1f) }
     var zoomY by remember(entries) { mutableStateOf(1f) }
     val laneHeight=baseLaneHeight*zoomY
-    val totalHeight=(entries.size*laneHeight.value+(if(compact) 30 else 44)).dp
+    val totalHeight=(displayEntries.size*laneHeight.value+(if(compact) 30 else 44)).dp
     var panFraction by remember(entries) { mutableStateOf(0f) }
     var selectedValue by remember(entries) { mutableStateOf<Double?>(null) }
     fun setTimeScale(targetDays:Double) {
@@ -909,7 +925,7 @@ class MainActivity:ComponentActivity() {
                 drawContext.canvas.nativeCanvas.drawText(axisDate(tick,visibleSpan),x,14.dp.toPx(),tickPaint)
             }
             clipRect(left,axisY,size.width-right,size.height) {
-            entries.forEachIndexed { i,e ->
+            displayEntries.forEachIndexed { i,e ->
                 val cy=axisY+12.dp.toPx()+laneHeight.toPx()*i+laneHeight.toPx()*.5f
                 drawLine(Color(0xFFF0F2F5),androidx.compose.ui.geometry.Offset(left,cy),androidx.compose.ui.geometry.Offset(size.width-right,cy),strokeWidth=1.dp.toPx())
                 val plotted=plottedEntries(e)
@@ -929,7 +945,7 @@ class MainActivity:ComponentActivity() {
                 }
             }
             }
-            entries.forEachIndexed { i,e ->
+            displayEntries.forEachIndexed { i,e ->
                 val cy=axisY+12.dp.toPx()+laneHeight.toPx()*i+laneHeight.toPx()*.5f
                 drawContext.canvas.nativeCanvas.drawText(e.title.take(13),4.dp.toPx(),cy+4.dp.toPx(),labelPaint)
             }
