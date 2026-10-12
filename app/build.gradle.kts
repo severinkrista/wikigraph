@@ -34,8 +34,8 @@ android {
         applicationId = "ru.wikigraph"
         minSdk = 26
         targetSdk = 35
-        versionCode = 503
-        versionName = "2.12.3"
+        versionCode = 504
+        versionName = "2.13.0"
     }
 
     buildTypes {
