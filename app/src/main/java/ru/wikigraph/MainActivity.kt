@@ -938,11 +938,8 @@ class MainActivity:ComponentActivity() {
                 if(x>=left && x<=size.width-right) {
                     drawLine(Color(0xFF23364D).copy(alpha=.85f),androidx.compose.ui.geometry.Offset(x,axisY),androidx.compose.ui.geometry.Offset(x,size.height),strokeWidth=1.5.dp.toPx())
                     drawCircle(Color.White,5.dp.toPx(),androidx.compose.ui.geometry.Offset(x,axisY+2.dp.toPx()))
-                    val text=axisDate(selected,visibleSpan)
-                    val p=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color=android.graphics.Color.WHITE; textSize=11.sp.toPx(); textAlign=android.graphics.Paint.Align.CENTER; typeface=android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL) }
-                    val cx=x.coerceIn(34.dp.toPx(),size.width-34.dp.toPx())
-                    drawContext.canvas.nativeCanvas.drawRoundRect(cx-32.dp.toPx(),2.dp.toPx(),cx+32.dp.toPx(),20.dp.toPx(),8.dp.toPx(),8.dp.toPx(),android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color=android.graphics.Color.rgb(35,54,77) })
-                    drawContext.canvas.nativeCanvas.drawText(text,cx,14.dp.toPx(),p)
+                    // The selected-date badge is drawn on the fixed ruler Canvas below,
+                    // otherwise that Canvas paints over the badge while dragging.
                 }
             }
         }
@@ -964,6 +961,25 @@ class MainActivity:ComponentActivity() {
                 val tick=visibleStart+visibleSpan*i/4
                 drawLine(Color(0xFFDCE2E9),androidx.compose.ui.geometry.Offset(x,17.dp.toPx()),androidx.compose.ui.geometry.Offset(x,size.height),strokeWidth=1.dp.toPx())
                 drawContext.canvas.nativeCanvas.drawText(axisDate(tick,visibleSpan),x,14.dp.toPx(),tickPaint)
+            }
+            selectedValue?.let { selected ->
+                val x=left+(((selected-low)/span).toFloat())*contentWidth-pan
+                if(x>=left && x<=size.width-right) {
+                    val text=axisDate(selected,visibleSpan)
+                    val p=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                        color=android.graphics.Color.WHITE; textSize=11.sp.toPx()
+                        textAlign=android.graphics.Paint.Align.CENTER
+                        typeface=android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL)
+                    }
+                    val badgeWidth=64.dp.toPx()
+                    val cx=x.coerceIn(left+badgeWidth/2f,size.width-right-badgeWidth/2f)
+                    drawContext.canvas.nativeCanvas.drawRoundRect(
+                        cx-badgeWidth/2f,1.dp.toPx(),cx+badgeWidth/2f,20.dp.toPx(),
+                        9.dp.toPx(),9.dp.toPx(),
+                        android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color=android.graphics.Color.BLACK }
+                    )
+                    drawContext.canvas.nativeCanvas.drawText(text,cx,14.dp.toPx(),p)
+                }
             }
         }
         }
