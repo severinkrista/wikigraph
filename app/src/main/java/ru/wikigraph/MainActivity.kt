@@ -964,22 +964,22 @@ class MainActivity:ComponentActivity() {
             }
             selectedValue?.let { selected ->
                 val x=left+(((selected-low)/span).toFloat())*contentWidth-pan
-                if(x>=left && x<=size.width-right) {
-                    val text=axisDate(selected,visibleSpan)
-                    val p=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                        color=android.graphics.Color.WHITE; textSize=11.sp.toPx()
-                        textAlign=android.graphics.Paint.Align.CENTER
-                        typeface=android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL)
-                    }
-                    val badgeWidth=64.dp.toPx()
-                    val cx=x.coerceIn(left+badgeWidth/2f,size.width-right-badgeWidth/2f)
-                    drawContext.canvas.nativeCanvas.drawRoundRect(
-                        cx-badgeWidth/2f,1.dp.toPx(),cx+badgeWidth/2f,20.dp.toPx(),
-                        9.dp.toPx(),9.dp.toPx(),
-                        android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color=android.graphics.Color.BLACK }
-                    )
-                    drawContext.canvas.nativeCanvas.drawText(text,cx,14.dp.toPx(),p)
+                val text=axisDate(selected,visibleSpan)
+                val p=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                    color=android.graphics.Color.WHITE; textSize=11.sp.toPx()
+                    textAlign=android.graphics.Paint.Align.CENTER
+                    typeface=android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL)
                 }
+                val badgeWidth=64.dp.toPx()
+                // Keep the selected date visible at the edge even if zoom/pan changes
+                // move its exact timeline position outside the current viewport.
+                val cx=x.coerceIn(left+badgeWidth/2f,size.width-right-badgeWidth/2f)
+                drawContext.canvas.nativeCanvas.drawRoundRect(
+                    cx-badgeWidth/2f,1.dp.toPx(),cx+badgeWidth/2f,20.dp.toPx(),
+                    9.dp.toPx(),9.dp.toPx(),
+                    android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color=android.graphics.Color.BLACK }
+                )
+                drawContext.canvas.nativeCanvas.drawText(text,cx,14.dp.toPx(),p)
             }
         }
         }
