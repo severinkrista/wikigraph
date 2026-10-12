@@ -1,0 +1,69 @@
+name: Android APK
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+on:
+  push:
+    branches: [main, android-prototype]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Build debug APK
+        run: gradle --no-daemon assembleDebug
+      - name: Verify APK signature matches the fixed signing key
+        shell: bash
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          KEYSTORE="app/build/signing/debug.keystore"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)"
+          EXPECTED="$(keytool -list -v -keystore "$KEYSTORE" -storetype PKCS12 -storepass android -alias androiddebugkey | awk -F': ' '/SHA256:/{print $2}' | tr -d ':')"
+          # apksigner may write certificate details to stderr; capture both streams.
+          SIGNATURE_INFO="$("$APKSIGNER" verify --print-certs "$APK" 2>&1)"
+          echo "$SIGNATURE_INFO"
+          ACTUAL="$(printf '%s\\n' "$SIGNATURE_INFO" | grep -Eio '[0-9a-f]{64}' | head -n 1 | tr '[:lower:]' '[:upper:]')"
+          EXPECTED="$(printf '%s' "$EXPECTED" | tr '[:lower:]' '[:upper:]')"
+          echo "Expected signing certificate SHA-256: ${EXPECTED:-<not found>}"
+          echo "APK signing certificate SHA-256:      ${ACTUAL:-<not found>}"
+          if [ -z "$EXPECTED" ] || [ -z "$ACTUAL" ]; then
+            echo "::error::Could not read signing certificate fingerprints."
+            exit 1
+          fi
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "::error::APK was signed with a different certificate than the repository's fixed signing key."
+            exit 1
+          fi
+          echo "APK signature verified against the repository's fixed signing key."
+      - name: Name APK with app version
+        id: apk
+        shell: bash
+        run: |
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          APK="wikigraph-${VERSION}-debug.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "app/build/outputs/apk/debug/${APK}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "path=app/build/outputs/apk/debug/${APK}" >> "$GITHUB_OUTPUT"
+      - name: Upload versioned APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: wikigraph-${{ steps.apk.outputs.version }}-debug-apk
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error
+          retention-days: 30
